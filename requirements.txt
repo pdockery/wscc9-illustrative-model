@@ -1,0 +1,6 @@
+# Pinned-light: Colab already ships numpy/pandas/scipy/matplotlib.
+# These three are the extras the notebooks need.
+pypsa
+pandapower
+pycirclize
+# (numpy, pandas, scipy, matplotlib are pulled in transitively)
