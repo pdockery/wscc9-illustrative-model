@@ -1,12 +1,11 @@
 # WSCC 9-bus illustrative models
 
 Small, self-contained teaching notebooks that illustrate nodal pricing, congestion
-rent, and market-seams concepts on the classic **WSCC / IEEE 9-bus** network. They
-accompany the working paper *Market Seams in the Western Interconnection* (Dockery, 2026).
+rent, and market-seams concepts on the classic **WSCC 9-bus** network. 
 
 Each notebook builds the 9-bus case from `pandapower`'s built-in network, clears a
 DC-OPF with PTDF shift factors, and renders matching network + circlize/chord figures.
-There are **no external data files** — everything is generated in-notebook.
+No external data files are needed. 
 
 ## Run it in your browser (no install)
 
