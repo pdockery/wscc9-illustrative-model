@@ -1649,7 +1649,7 @@ def plot_combined_letter(
     axis_key=False,
     all_buses=None,
     title_left='Network — DC power flow',
-    title_right='Nodal merit order, demand (height = LMP) & flows',
+    title_right='Nodal dispatch - - merit order, demand, PTDF gen->load',
     suptitle=None,
     figsize=(11, 6.2),
     label_fontsize=10,
