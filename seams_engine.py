@@ -200,6 +200,7 @@ def solve_engine_dispatch(
     pt: PTDFData,
     engine: MarketEngine,
     exo: dict[str, float] | None = None,
+    flow_offsets: dict[str, float] | None = None,
 ) -> EngineResult:
     """Clear one engine's DC-OPF on the shared network.
 
@@ -213,6 +214,13 @@ def solve_engine_dispatch(
         ``{bus: MW}`` price-taking exogenous injections (positive = injection
         into this engine's footprint). This is how a neighbouring engine's
         export shows up: a fixed, price-insensitive schedule (paper §2.3, §4.2).
+    flow_offsets : dict, optional
+        ``{line: MW}`` signed flow (in each line's reference direction) that
+        this engine *accommodates* on its activated limits: the limit is
+        enforced on ``F^M_m + offset_m`` rather than on ``F^M_m`` alone, so the
+        engine leaves room for another party's anticipated flow. The offset is
+        exogenous to the optimisation (an ATC-style reservation), not a
+        decision variable. Default ``None`` leaves the limits unchanged.
 
     Returns
     -------
@@ -221,6 +229,7 @@ def solve_engine_dispatch(
         congestion duals, and the engine's own flow component (eq. 6).
     """
     exo = {str(k): float(v) for k, v in (exo or {}).items()}
+    offsets = {str(k): float(v) for k, v in (flow_offsets or {}).items()}
     gen_ids = list(engine.gens)
     G = len(gen_ids)
     if G == 0:
@@ -258,10 +267,11 @@ def solve_engine_dispatch(
 
     A_ub, b_ub = [], []
     for row, l in enumerate(act):
-        A_ub.append(gen_sf[row])                       # +flow ≤ F̄ − Ffix
-        b_ub.append(pt.s_nom[l] - Ffix[l])
-        A_ub.append(-gen_sf[row])                      # −flow ≤ F̄ + Ffix
-        b_ub.append(pt.s_nom[l] + Ffix[l])
+        off = offsets.get(pt.lines[l], 0.0)            # accommodated flow (signed)
+        A_ub.append(gen_sf[row])                       # +(flow+off) ≤ F̄ − Ffix
+        b_ub.append(pt.s_nom[l] - Ffix[l] - off)
+        A_ub.append(-gen_sf[row])                      # −(flow+off) ≤ F̄ + Ffix
+        b_ub.append(pt.s_nom[l] + Ffix[l] + off)
     A_ub = np.array(A_ub) if A_ub else None
     b_ub = np.array(b_ub) if b_ub else None
 
