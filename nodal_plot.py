@@ -565,6 +565,7 @@ def plot_nodal_circlize(
     show_group_labels=True,
     annotate_roles=False,
     axis_key=False,
+    demand_segments=None,
 ):
     """
     Create a circlize chord diagram showing nodal generation, demand, and flows.
@@ -773,6 +774,10 @@ def plot_nodal_circlize(
             bid_vol = gen['volume']
             price = gen['price']
             accepted = min(gen['accepted_volume'], bid_vol)
+            # Opt-in per-unit colour override (e.g. a grey self-schedule block
+            # inside an otherwise bus-coloured stack); default = bus colour.
+            gcol = gen.get('color', bc)
+            gcol_dark = _darken(gcol) if 'color' in gen else bc_dark
 
             bar_top = _price_to_r(price)
 
@@ -784,17 +789,17 @@ def plot_nodal_circlize(
             # Nameplate capacity (very faded — withheld capacity)
             if x_end_nameplate > x_pos + 0.01:
                 track.rect(x_pos, x_end_nameplate, r_lim=(55, bar_top),
-                           fc=bc, alpha=0.08, ec=bc, lw=0.5, ls='--')
+                           fc=gcol, alpha=0.08, ec=gcol, lw=0.5, ls='--')
 
             # Bid volume (faded — offered but not accepted)
             if bid_vol > 0 and x_end_bid > x_pos + 0.01:
                 track.rect(x_pos, x_end_bid, r_lim=(55, bar_top),
-                           fc=bc, alpha=0.25, ec=bc, lw=0.5)
+                           fc=gcol, alpha=0.25, ec=gcol, lw=0.5)
 
             # Accepted dispatch (solid bus color)
             if accepted > 0 and x_end_acc > x_pos + 0.01:
                 track.rect(x_pos, x_end_acc, r_lim=(55, bar_top),
-                           fc=bc, alpha=0.7, ec=bc_dark, lw=0.8)
+                           fc=gcol, alpha=0.7, ec=gcol_dark, lw=0.8)
 
             # Label: the BID (price × volume) on each gen bar, mirroring the
             # load side which prints its MW in-track. (Unit name dropped.)
@@ -807,7 +812,7 @@ def plot_nodal_circlize(
                 price_str = f"${price:.0f}"
             track.text(f"{price_str} × {bid_vol:.0f} MW",
                        x=mid_x, r=bar_top + 5,
-                       fontsize=_fs_gen, color=bc_dark,
+                       fontsize=_fs_gen, color=gcol_dark,
                        fontweight='bold')
 
             # Dispatched MW printed INSIDE the gen track (mirrors the load side,
@@ -818,7 +823,7 @@ def plot_nodal_circlize(
             if accepted > 0.5:
                 track.text(f"{accepted:.0f} MW",
                            x=x_pos + accepted / 2, r=(55 + bar_top) / 2,
-                           fontsize=_fs_gen, color=bc_dark,
+                           fontsize=_fs_gen, color=gcol_dark,
                            fontweight='bold')
 
             # Staircase step line between generators
@@ -872,32 +877,67 @@ def plot_nodal_circlize(
                     color='#17202A', lw=1.6, ls=(0, (4, 2)), zorder=12,
                 )
 
-        # LOAD side (right): demand bar, height = bus LMP
+        # LOAD side (right): demand bar, height = bus LMP. An opt-in
+        # demand_segments entry splits the SAME total into consecutive
+        # segments, each with its own height/colour (e.g. the portion of a
+        # load served by a self-schedule at the other market's price).
         if dem > 0:
             load_start = gw + (gap if gw > 0 else 0)
             load_end = min(load_start + dem, size)
+            segs = (demand_segments or {}).get(bus)
 
-            load_bar_top = _price_to_r(bus_lmp)
+            if segs:
+                x0 = load_start
+                for seg in segs:
+                    mw = float(seg['mw'])
+                    if mw <= 0.01:
+                        continue
+                    x1 = min(x0 + mw, load_end)
+                    seg_top = _price_to_r(float(seg.get('price', bus_lmp)))
+                    scol = seg.get('color', bc)
+                    scol_dark = _darken(scol) if 'color' in seg else bc_dark
+                    # Per-segment alpha (default = the demand fill 0.35). A fainter
+                    # alpha draws e.g. shed/unserved load in the bus colour, the
+                    # way idle generation capacity is drawn faint on the supply side.
+                    track.rect(x0, x1, r_lim=(55, seg_top),
+                               fc=scol, alpha=float(seg.get('alpha', 0.35)),
+                               ec=scol_dark, lw=0.8)
+                    if mw > 0.5:
+                        track.text(f"{mw:.0f} MW", x=(x0 + x1) / 2,
+                                   r=(55 + seg_top) / 2,
+                                   fontsize=_fs_load, color=scol_dark,
+                                   fontweight='bold')
+                    x0 = x1
+                # A split load bar no longer encodes the bus LMP by its
+                # height, so draw the dashed LMP line across the load region
+                # (mirrors the gen-region line) to keep the price visible.
+                if lmp_line and bus_lmp > 0 and load_end - load_start > 1.0:
+                    track.line([load_start + 0.5, load_end - 0.5],
+                               [min(bus_lmp, norm_price)] * 2,
+                               vmin=0, vmax=norm_price,
+                               color='#17202A', lw=1.6, ls=(0, (4, 2)), zorder=12)
+            else:
+                load_bar_top = _price_to_r(bus_lmp)
 
-            # Demand bar at LMP height
-            track.rect(load_start, load_end, r_lim=(55, load_bar_top),
-                       fc=bc, alpha=0.35, ec=bc_dark, lw=0.8)
+                # Demand bar at LMP height
+                track.rect(load_start, load_end, r_lim=(55, load_bar_top),
+                           fc=bc, alpha=0.35, ec=bc_dark, lw=0.8)
 
-            mid_load = load_start + dem / 2
-            # Radius = midpoint of the filled load bar (55 -> load_bar_top), so the
-            # MW label stays inside the bar even when the LMP (bar height) is low.
-            track.text(f"{dem:.0f} MW", x=mid_load, r=(55 + load_bar_top) / 2,
-                       fontsize=_fs_load, color=bc_dark,
-                       fontweight='bold')
-            # Price label on load bar (suppressed in compact mode and whenever a
-            # track_fontsize floor is set — it is a tiny, duplicate of the bus LMP
-            # already shown in the outer ring label and the shared key).
-            if not compact and track_fontsize is None:
-                lmp_label = f"${bus_lmp:.1f}"
-                if bus_lmp > norm_price:
-                    lmp_label = f"${bus_lmp:,.1f}"
-                track.text(lmp_label, x=mid_load, r=58,
-                           fontsize=4, color=bc_dark)
+                mid_load = load_start + dem / 2
+                # Radius = midpoint of the filled load bar (55 -> load_bar_top), so the
+                # MW label stays inside the bar even when the LMP (bar height) is low.
+                track.text(f"{dem:.0f} MW", x=mid_load, r=(55 + load_bar_top) / 2,
+                           fontsize=_fs_load, color=bc_dark,
+                           fontweight='bold')
+                # Price label on load bar (suppressed in compact mode and whenever a
+                # track_fontsize floor is set — it is a tiny, duplicate of the bus LMP
+                # already shown in the outer ring label and the shared key).
+                if not compact and track_fontsize is None:
+                    lmp_label = f"${bus_lmp:.1f}"
+                    if bus_lmp > norm_price:
+                        lmp_label = f"${bus_lmp:,.1f}"
+                    track.text(lmp_label, x=mid_load, r=58,
+                               fontsize=4, color=bc_dark)
 
             bus_load_range[bus] = (load_start, load_end)
         else:
@@ -1647,6 +1687,7 @@ def plot_combined_letter(
     show_group_labels=True,
     annotate_roles=False,
     axis_key=False,
+    demand_segments=None,
     all_buses=None,
     title_left='Network — DC power flow',
     title_right='Nodal dispatch - - merit order, demand, PTDF gen->load',
@@ -1709,6 +1750,7 @@ def plot_combined_letter(
         lmp_line=lmp_line, bus_groups=bus_groups, group_colors=group_colors,
         group_label_fontsize=group_label_fontsize, show_group_labels=show_group_labels,
         annotate_roles=annotate_roles, axis_key=axis_key,
+        demand_segments=demand_segments,
         ax=ax_circ, label_fontsize=label_fontsize, compact=True,
         show_legend=False, sector_order=sector_order,
         start=start, center_bus=center_bus,

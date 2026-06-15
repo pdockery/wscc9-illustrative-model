@@ -194,6 +194,10 @@ class EngineResult:
     flow_own: dict[str, float]              # F^M_m  (own injections only)
     total_cost: float
     status: str
+    interchange_mw: float | None = None     # E (net export of the interchange bus set)
+    interchange_dual: float | None = None   # μ_T (signed, nonzero if the limit binds)
+    interchange_limit: float | None = None  # Ē (the scheduling limit enforced)
+    shed_by_bus: dict[str, float] = field(default_factory=dict)  # u_n (unserved load; empty unless shed_price set)
 
 
 def solve_engine_dispatch(
@@ -201,6 +205,8 @@ def solve_engine_dispatch(
     engine: MarketEngine,
     exo: dict[str, float] | None = None,
     flow_offsets: dict[str, float] | None = None,
+    interchange: tuple | None = None,
+    shed_price: float | None = None,
 ) -> EngineResult:
     """Clear one engine's DC-OPF on the shared network.
 
@@ -221,6 +227,31 @@ def solve_engine_dispatch(
         engine leaves room for another party's anticipated flow. The offset is
         exogenous to the optimisation (an ATC-style reservation), not a
         decision variable. Default ``None`` leaves the limits unchanged.
+    interchange : (buses, limit), optional
+        A net-interchange scheduling limit (an EDAM-style transfer constraint):
+        ``buses`` is one footprint's bus set, and the engine's net export out
+        of it, ``E = Σ_{i: bus(i)∈buses} g_i + Σ_{n∈buses} (exo_n − d_n)``
+        (lossless DC: identical to the summed tie flow across the cutset), is
+        held within ``±limit``. The signed dual is returned as
+        ``interchange_dual``, ``E`` as ``interchange_mw``, and every bus inside
+        ``buses`` carries the same ``+μ_T`` term in ``lmp`` — the per-footprint
+        energy-price separation a transfer constraint creates. Default ``None``
+        adds nothing.
+    shed_price : float, optional
+        Power-balance relaxation penalty, $/MWh (load shedding). When set, an
+        unserved-load variable ``0 ≤ u_n ≤ d_n`` is added at every load bus and
+        priced at ``shed_price`` in the objective, so the clearing stays
+        feasible when generation cannot reach load (e.g. behind a binding
+        constraint). Mechanically ``u_n`` is a virtual generator at the load
+        bus with cost ``shed_price``: nothing sheds while cheaper supply can
+        reach the bus, and where shedding is interior the bus LMP equals
+        ``shed_price`` (the penalty becomes the price cap). Mirrors the EDAM
+        power-balance relaxation (per-BAA energy-supply-shortfall variables at
+        penalty costs — Draft Technical Description §5.5/§11). Shed quantities
+        return as ``shed_by_bus``; ``load_by_bus`` stays the NOMINAL load
+        (served = load − shed). ``total_cost`` remains the production cost of
+        dispatch only (the penalty term is not included). Default ``None``
+        disables the relaxation (an unservable engine raises, as before).
 
     Returns
     -------
@@ -239,6 +270,18 @@ def solve_engine_dispatch(
     cap = np.array([engine.gens[g]["p_nom"] for g in gen_ids])
     gen_bus = [str(engine.gens[g]["bus"]) for g in gen_ids]
 
+    # Load-shed relaxation columns: one unserved-load variable u_n per load bus,
+    # structurally a virtual generator at that bus with cost shed_price.
+    shed_bus: list[str] = []
+    shed_cap_l: list[float] = []
+    if shed_price is not None:
+        for b, v in engine.loads.items():
+            if float(v) > 0:
+                shed_bus.append(str(b))
+                shed_cap_l.append(float(v))
+    K = len(shed_bus)
+    shed_cap = np.array(shed_cap_l)
+
     # Fixed injection at each bus from loads (−) and exogenous schedules (+)
     load_vec = np.zeros(pt.n_bus)
     for bus, mw in engine.loads.items():
@@ -250,8 +293,8 @@ def solve_engine_dispatch(
     total_load = load_vec.sum()
     total_exo = exo_vec.sum()
 
-    # ── Energy balance:  Σ_g g = total_load − total_exo ──────────────────
-    A_eq = np.ones((1, G))
+    # ── Energy balance:  Σ_g g + Σ_n u_n = total_load − total_exo ────────
+    A_eq = np.ones((1, G + K))
     b_eq = np.array([total_load - total_exo])
 
     # ── Activated line limits ────────────────────────────────────────────
@@ -264,25 +307,46 @@ def solve_engine_dispatch(
     Ffix = pt.ptdf @ (exo_vec - load_vec)
     gen_sf = np.array([[pt.ptdf[l, pt.bus_idx[gb]] for gb in gen_bus] for l in act]) \
         if act else np.zeros((0, G))
+    shed_sf = np.array([[pt.ptdf[l, pt.bus_idx[b]] for b in shed_bus] for l in act]) \
+        if act else np.zeros((0, K))
 
     A_ub, b_ub = [], []
     for row, l in enumerate(act):
         off = offsets.get(pt.lines[l], 0.0)            # accommodated flow (signed)
-        A_ub.append(gen_sf[row])                       # +(flow+off) ≤ F̄ − Ffix
+        row_sf = np.concatenate([gen_sf[row], shed_sf[row]])
+        A_ub.append(row_sf)                            # +(flow+off) ≤ F̄ − Ffix
         b_ub.append(pt.s_nom[l] - Ffix[l] - off)
-        A_ub.append(-gen_sf[row])                      # −(flow+off) ≤ F̄ + Ffix
+        A_ub.append(-row_sf)                           # −(flow+off) ≤ F̄ + Ffix
         b_ub.append(pt.s_nom[l] + Ffix[l] + off)
+
+    # ── Net-interchange (transfer) constraint:  −Ē ≤ E ≤ Ē ──────────────
+    ix_buses: set[str] = set()
+    a_ix = e_fix = None
+    if interchange is not None:
+        ix_buses = {str(b) for b in interchange[0]}
+        ix_limit = float(interchange[1])
+        a_ix = np.array([1.0 if gb in ix_buses else 0.0 for gb in gen_bus])
+        a_ixu = np.array([1.0 if b in ix_buses else 0.0 for b in shed_bus])
+        a_row = np.concatenate([a_ix, a_ixu])          # shed inside the set raises its net export
+        e_fix = float(sum((exo_vec - load_vec)[pt.bus_idx[b]] for b in ix_buses))
+        A_ub.append(a_row)                             # +E ≤ Ē  (E = a·g + a_u·u + e_fix)
+        b_ub.append(ix_limit - e_fix)
+        A_ub.append(-a_row)                            # −E ≤ Ē
+        b_ub.append(ix_limit + e_fix)
+
     A_ub = np.array(A_ub) if A_ub else None
     b_ub = np.array(b_ub) if b_ub else None
 
+    c_vec = np.concatenate([cost, np.full(K, float(shed_price))]) if K else cost
     res = linprog(
-        cost, A_ub=A_ub, b_ub=b_ub, A_eq=A_eq, b_eq=b_eq,
-        bounds=[(0, c) for c in cap], method="highs",
+        c_vec, A_ub=A_ub, b_ub=b_ub, A_eq=A_eq, b_eq=b_eq,
+        bounds=[(0, c) for c in cap] + [(0, c) for c in shed_cap], method="highs",
     )
     if not res.success:
         raise RuntimeError(f"Engine {engine.name!r} infeasible: {res.message}")
 
-    g_opt = res.x
+    g_opt = res.x[:G]
+    u_opt = res.x[G:]
     dispatch = {gid: float(g_opt[i]) for i, gid in enumerate(gen_ids)}
 
     # ── Dual decomposition → nodal LMP (eq. 9) ───────────────────────────
@@ -298,6 +362,19 @@ def solve_engine_dispatch(
         mu = float(m[2 * row] - m[2 * row + 1])        # signed congestion dual
         line_dual[pt.lines[l]] = mu
         cong += pt.ptdf[l] * mu
+
+    # Interchange dual: same signed convention; shifts every bus in the set.
+    interchange_mw = interchange_dual = interchange_limit = None
+    if interchange is not None:
+        ix_row = 2 * len(act)
+        mu_t = float(m[ix_row] - m[ix_row + 1])
+        ind = np.array([1.0 if pt.buses[n] in ix_buses else 0.0
+                        for n in range(pt.n_bus)])
+        cong += ind * mu_t
+        interchange_mw = float(a_ix @ g_opt + (a_ixu @ u_opt if K else 0.0) + e_fix)
+        interchange_dual = mu_t
+        interchange_limit = ix_limit
+
     lmp = {pt.buses[n]: energy_price + cong[n] for n in range(pt.n_bus)}
 
     # ── Engine's own flow component F^M_m (eq. 6) ────────────────────────
@@ -307,7 +384,10 @@ def solve_engine_dispatch(
     inj = np.zeros(pt.n_bus)
     for b, mw in gen_by_bus.items():
         inj[pt.bus_idx[b]] += mw
-    inj += exo_vec - load_vec
+    shed_vec = np.zeros(pt.n_bus)
+    for b, u in zip(shed_bus, u_opt):
+        shed_vec[pt.bus_idx[b]] += u
+    inj += exo_vec - load_vec + shed_vec      # withdrawals are SERVED load (d − u)
     flow_own = {pt.lines[l]: float((pt.ptdf[l] @ inj)) for l in range(pt.n_line)}
 
     return EngineResult(
@@ -323,6 +403,10 @@ def solve_engine_dispatch(
         flow_own=flow_own,
         total_cost=float(cost @ g_opt),
         status=res.message,
+        interchange_mw=interchange_mw,
+        interchange_dual=interchange_dual,
+        interchange_limit=interchange_limit,
+        shed_by_bus={b: float(u) for b, u in zip(shed_bus, u_opt) if u > 1e-9},
     )
 
 
@@ -393,6 +477,44 @@ def to_supply_demand(
         supply_by_bus[bus].sort(key=lambda g: g["price"])
     demand_by_bus = {str(b): float(v) for b, v in engine.loads.items() if v > 0}
     return supply_by_bus, demand_by_bus
+
+
+def shed_segments(result, demand_by_bus, shed_alpha=0.12):
+    """A ``nodal_plot`` ``demand_segments`` dict that renders shed (unserved) load
+    as a faint tail: each shed bus's load bar splits into a served segment (bus
+    colour at the demand fill) plus an unserved segment in the SAME bus colour at
+    the fainter ``shed_alpha`` — the convention used for idle generation capacity.
+    Returns ``{}`` when nothing sheds, so ``shed_segments(...) or None`` is a clean
+    default.
+    """
+    segs: dict[str, list] = {}
+    for b, u in (result.shed_by_bus or {}).items():
+        if u <= 1e-6:
+            continue
+        served = float(demand_by_bus.get(str(b), 0.0)) - u
+        segs[str(b)] = ([{"mw": served}] if served > 0.5 else []) \
+            + [{"mw": u, "alpha": shed_alpha}]   # bus colour (inherited), faint
+    return segs
+
+
+def served_by_bus(result, demand_by_bus):
+    """``{bus: served MW}`` at the buses that shed, for ``plot_network_topology``'s
+    ``demand_served_by_bus`` ('served/total' load annotation). Empty when nothing
+    sheds, so the annotation falls back to the plain total elsewhere.
+    """
+    return {str(b): float(demand_by_bus.get(str(b), 0.0)) - u
+            for b, u in (result.shed_by_bus or {}).items() if u > 1e-6}
+
+
+def served_demand(result, demand_by_bus):
+    """Full ``{bus: served MW}`` = demand − shed, for tracing gen→load chords on
+    the SERVED dispatch. Passing this (not nominal demand) to
+    ``compute_ptdf_flows`` keeps the trace balanced (Σ gen = Σ served), so each
+    generator's chords match its dispatch and a shed bus receives only its
+    served-MW of incoming chords (the unserved tail stays chord-free).
+    """
+    shed = result.shed_by_bus or {}
+    return {str(b): float(v) - shed.get(str(b), 0.0) for b, v in demand_by_bus.items()}
 
 
 def seam_dual_gap(results: list[EngineResult], buses: list[str]) -> pd.DataFrame:
