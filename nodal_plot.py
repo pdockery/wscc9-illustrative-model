@@ -431,37 +431,38 @@ def compute_ptdf_flows(network, supply_by_bus, demand_by_bus):
         if net_gen.get(b, 0.0) > 0.1:        # only NET (surplus) gen enters the network
             gen_at_bus[b][b] = net_gen[b]
 
-    # Iterative solve: propagate gen shares through the network
-    # (converges in a few iterations for acyclic-ish flow patterns)
-    for iteration in range(20):
+    # Iterative proportional sharing (Bialek). Each bus's throughput, decomposed by
+    # gen origin, is its OWN net (surplus) gen plus the inflow on each incoming line
+    # carrying that line's upstream composition. Restart every iteration from the
+    # local gen only and read the PREVIOUS iteration's shares (Jacobi), so a bus is
+    # never re-added to itself: the earlier in-place/accumulating form re-added the
+    # inflows on top of the already-accumulated shares, inflating a generator's
+    # downstream reach and breaking gen-side conservation (its chords summed to more
+    # than its dispatch) — which surfaces once a bus hosts BOTH gen and load, or
+    # flows form a loop.
+    base = {b: ({b: net_gen[b]} if net_gen.get(b, 0.0) > 0.1 else {}) for b in buses}
+    for _iteration in range(60):
         changed = False
+        next_gab = {}
         for b in buses:
-            new_shares = dict(gen_at_bus[b])  # start with local gen
+            new_shares = dict(base[b])  # local surplus gen only; inflows added below
 
             for from_bus, li, abs_flow in incoming[b]:
-                # What's the gen composition of power at from_bus?
-                from_shares = gen_at_bus.get(from_bus, {})
+                from_shares = gen_at_bus.get(from_bus, {})   # previous iteration
                 from_total = sum(from_shares.values())
                 if from_total < 0.01:
                     continue
-
-                # This line carries abs_flow MW from from_bus to b
-                # Each gen's share of this line flow is proportional to
-                # its share of total power at from_bus
+                # This line carries abs_flow MW from from_bus to b; split it by
+                # from_bus's gen composition.
                 for g_bus, g_mw in from_shares.items():
-                    frac = g_mw / from_total
-                    contrib = frac * abs_flow
-                    new_shares[g_bus] = new_shares.get(g_bus, 0) + contrib
+                    new_shares[g_bus] = new_shares.get(g_bus, 0.0) + (g_mw / from_total) * abs_flow
 
-            # Check convergence
-            for g in set(list(new_shares.keys()) + list(gen_at_bus[b].keys())):
-                old_val = gen_at_bus[b].get(g, 0)
-                new_val = new_shares.get(g, 0)
-                if abs(old_val - new_val) > 0.1:
+            for g in set(new_shares) | set(gen_at_bus.get(b, {})):
+                if abs(gen_at_bus.get(b, {}).get(g, 0.0) - new_shares.get(g, 0.0)) > 0.05:
                     changed = True
+            next_gab[b] = new_shares
 
-            gen_at_bus[b] = new_shares
-
+        gen_at_bus = next_gab
         if not changed:
             break
 
@@ -1408,6 +1409,7 @@ def plot_network_topology(
     title_fontsize=13,
     lmp_only=False,
     flow_label_fontsize=9,
+    parallel_gap=0.12,
 ):
     """
     Draw the network topology diagram with bus colors matching the circlize plot.
@@ -1486,12 +1488,28 @@ def plot_network_topology(
 
     # --- Draw lines with flow arrows ---
     lines = network.lines[['bus0', 'bus1', 's_nom']]
+    # Parallel circuits (same bus pair) get a small perpendicular offset so they
+    # render side-by-side rather than overplotting. Single lines are unaffected.
+    _groups = {}
+    for _ln, _lr in lines.iterrows():
+        _groups.setdefault(frozenset((_lr['bus0'], _lr['bus1'])), []).append(_ln)
+    _par_offset = {}
+    for _grp in _groups.values():
+        _k = len(_grp)
+        for _j, _ln in enumerate(sorted(_grp)):
+            _par_offset[_ln] = (_j - (_k - 1) / 2.0) * parallel_gap
     for line_name, line in lines.iterrows():
         b0, b1 = line['bus0'], line['bus1']
         if b0 not in coords or b1 not in coords:
             continue
         x0, y0 = coords[b0]
         x1, y1 = coords[b1]
+        off = _par_offset.get(line_name, 0.0)
+        if off:
+            _dx, _dy = x1 - x0, y1 - y0
+            _L = (_dx * _dx + _dy * _dy) ** 0.5 or 1.0
+            _ox, _oy = -_dy / _L * off, _dx / _L * off
+            x0, y0, x1, y1 = x0 + _ox, y0 + _oy, x1 + _ox, y1 + _oy
         s_nom = line['s_nom']
         flow = line_flows.get(line_name, 0.0)
 
