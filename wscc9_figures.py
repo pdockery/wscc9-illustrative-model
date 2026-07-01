@@ -32,11 +32,15 @@ from matplotlib.lines import Line2D
 import matplotlib.patches as mpatches
 
 import nodal_plot
-from nodal_plot import plot_combined_letter, compute_ptdf_flows
+from nodal_plot import plot_combined_letter, compute_ptdf_flows, plot_network_topology
 from seams_engine import (
     to_supply_demand, susceptance_widths, shed_segments, served_demand,
 )
 from wscc9_model import BUS_COLORS, COORDS, RING_ORDER, CENTER_BUS
+
+#: Tier colours for sold transmission rights drawn on the network.
+RIGHT_TIER_COLORS = {"inter": "#117A65", "intra": "#B9770E"}
+_WECC_PATH = "#B8860B"   # gold: a WECC-rated inter-BA path (tie)
 
 _DIM = "#C8CCCE"        # greyed (out-of-focus) footprint
 _UNASSIGNED = "#AAB7B8"  # line assigned to nobody
@@ -48,6 +52,7 @@ def footprint_figure(
     highlight=None, dim_buses=None, exo_sched=None, sup_dem=None,
     bus_colors=None, demand_segments=None, shed=True, legend_note=None, suptitle=None,
     annotate_roles=True, axis_key=True,
+    node_net_mw=None, network_show_lmp=None,
     bus_coords=None, ring_order=None, center_bus=None,
     title_left="Network -- DC power flow",
     title_right="Nodal dispatch -- merit order, demand & flows",
@@ -79,7 +84,26 @@ def footprint_figure(
         Track load shedding — trace gen→load flows on SERVED demand and draw the
         unserved tail as a faint segment. Default True (off for trade views that
         pass their own ``demand_segments``).
+    node_net_mw : True or dict, optional
+        Annotate each network node with its NET injection (+) / withdrawal (−)
+        instead of (or alongside) the LMP. ``True`` reads the clearing's own
+        ``res.injection`` (dispatched gen − served load + exo); a dict ``{bus: MW}``
+        overrides it. Pairs with ``network_show_lmp`` (default then: hide the
+        network-panel LMP, since price is read off the dispatch ring).
+    network_show_lmp : bool, optional
+        Whether the NETWORK panel prints the bus LMP. Default ``True`` unless
+        ``node_net_mw`` is given (then ``False``). The dispatch ring always keeps
+        its LMP labels.
     """
+    if node_net_mw is True:
+        bus_net = {b: float(res.injection[pt.bus_idx[b]]) for b in pt.buses}
+    elif isinstance(node_net_mw, dict):
+        bus_net = {str(k): float(v) for k, v in node_net_mw.items()}
+    else:
+        bus_net = None
+    if network_show_lmp is None:
+        network_show_lmp = bus_net is None
+
     has_selfsched = False
     if sup_dem is not None:
         sup, dem = sup_dem
@@ -138,6 +162,7 @@ def footprint_figure(
     fig, (ax_net, ax_circ) = plot_combined_letter(
         net, sup, dem,
         bus_colors=colors, bus_lmps=res.lmp,
+        bus_net_mw=bus_net, network_show_lmp=network_show_lmp,
         line_flows={l: res.flow_own[l] for l in pt.lines},
         line_widths=susceptance_widths(pt), line_colors=lcolors,
         constrained_lines=binding,
@@ -265,11 +290,310 @@ def draw_net_dispatch(ax, fp, res, ebar, engine, tie_cap):
 INSET_RECT = (0.005, 0.02, 0.19, 0.235)
 
 
-def transfer_figure(net, pt, fp, engine, res, ebar, tie_cap, suptitle=None):
+def transfer_figure(net, pt, fp, engine, res, ebar, tie_cap, suptitle=None, **kw):
     """:func:`footprint_figure` plus the "Transfers" inset in the network panel's
-    lower-left, at the network panel's own bubble scale."""
-    fig = footprint_figure(net, pt, fp, engine, res, suptitle=suptitle)
+    lower-left, at the network panel's own bubble scale. Extra keyword arguments
+    (e.g. ``node_net_mw``, ``highlight``) pass through to :func:`footprint_figure`."""
+    fig = footprint_figure(net, pt, fp, engine, res, suptitle=suptitle, **kw)
     draw_net_dispatch(fig.add_axes(INSET_RECT), fp, res, ebar, engine, tie_cap)
+    return fig
+
+
+def draw_rights_arcs(ax, rights, coords=None, *, tier_colors=None, rad=0.22,
+                     label=True, atc_caps=None, label_mw=True):
+    """Overlay sold point-to-point transmission rights as directed POR->POD arcs.
+
+    ``rights`` is a list of dicts ``{'source','sink','mw', 'tier'?, 'honored'?}``:
+    a curved arrow from the source bus to the sink bus, width growing with ``mw``,
+    coloured by ``tier`` ('inter' = inter-BA path right / WECC backbone, 'intra' =
+    intra-BA right) via ``tier_colors`` (default :data:`RIGHT_TIER_COLORS`). A
+    ``honored=False`` right is drawn dashed (a curtailed / unfunded right). Drawn
+    ON TOP of an existing network panel (e.g. the ``ax`` returned by
+    :func:`rights_figure` / ``plot_network_topology``) so the financial rights sit
+    over the physical lines they load.
+
+    ``atc_caps`` (the ATC layer) is an optional list aligned with ``rights``; when
+    given, each arc's label reads ``MW / ATC`` -- the scheduled quantity against the
+    path's standalone transfer capability -- so an arc near its own cap is visible.
+    """
+    import numpy as np
+    from matplotlib.patches import FancyArrowPatch
+
+    coords = COORDS if coords is None else coords
+    tcol = RIGHT_TIER_COLORS if tier_colors is None else tier_colors
+    for ri, r in enumerate(rights):
+        s, k, mw = str(r["source"]), str(r["sink"]), float(r["mw"])
+        col = tcol.get(r.get("tier", "inter"), "#117A65")
+        honored = r.get("honored", True)
+        p0, p1 = np.array(coords[s]), np.array(coords[k])
+        ax.add_patch(FancyArrowPatch(
+            p0, p1, connectionstyle=f"arc3,rad={rad}", arrowstyle="-|>",
+            mutation_scale=18, lw=1.6 + 3.6 * min(1.0, mw / 150.0), color=col,
+            ls="-" if honored else (0, (4, 3)), alpha=0.9 if honored else 0.7,
+            zorder=6, shrinkA=14, shrinkB=16))
+        if label:
+            mid = 0.5 * (p0 + p1)
+            d = p1 - p0
+            # matplotlib's arc3 bows toward (dy, -dx) by 0.5*rad*|chord|; put the
+            # label on that arc midpoint (so it scales with chord length and sits on
+            # the curve), nudged a touch further out so the box clears the line.
+            bulge = np.array([d[1], -d[0]])
+            bunit = bulge / (np.linalg.norm(bulge) + 1e-9)
+            if label_mw:
+                cap = None if atc_caps is None else atc_caps[ri]
+                mwtag = f"{mw:.0f} MW" if cap is None else f"{mw:.0f} / {cap:.0f} MW"
+                tag = f"{s}→{k}\n{mwtag}" + ("" if honored else "\n(curtailed)")
+            else:
+                # path only; the MW / ATC live in the table beside the graph
+                tag = f"{s}→{k}" + ("" if honored else " (curt.)")
+            ax.annotate(tag, mid + 0.5 * rad * bulge + 0.30 * bunit,
+                        ha="center", va="center", fontsize=7.5,
+                        color=col, fontweight="bold", zorder=8,
+                        bbox=dict(boxstyle="round,pad=0.2", fc="white", ec=col,
+                                  lw=1, alpha=0.92))
+    return ax
+
+
+def rights_figure(net, pt, rights, *, fp=None, ties=None, coords=None,
+                  monitored="all", title=None, bus_colors=None, tier_colors=None,
+                  line_colors=None, line_widths=None, show_atc=False, show_sft=True,
+                  supply_by_bus=None, demand_by_bus=None, bus_net_mw=None,
+                  col_labels=None, atc_values=None, pct_values=None):
+    """The standard "transmission rights" view: network panel + rights table.
+
+    Two panels side by side so the graph stays uncluttered and the numbers are
+    readable:
+
+    * **Left -- the network.** Each ``rights`` entry (see :func:`draw_rights_arcs`)
+      is a POR->POD arc, width growing with MW, coloured by tier (inter-BA gold-path
+      vs intra-BA), labelled by **path only** (``2->7``). The physical, *superposed*
+      award flow rides on the lines as a direction arrow + ``flow / limit`` (the
+      share of capacity); any line the rights overload (``show_sft``) turns **red**
+      -- the simultaneous-feasibility test failing, path-by-path rights colliding on
+      the shared grid.
+    * **Right -- the rights table.** One row per right: ``Right`` (path, coloured to
+      match its arc), scheduled ``MW``, and -- with ``show_atc`` -- the path's
+      standalone ``ATC`` (:func:`atc.ttc`) and the ``%ATC`` booked.
+
+    Returns the figure. (Layers 3 parallel-flow and 4 transfer-cutset are added as
+    the series reaches the notebooks that teach them.)
+    """
+    import atc
+    import matplotlib.pyplot as plt
+    from seams_engine import susceptance_widths
+
+    # Line WIDTH encodes susceptance b_m = 1/x_m (the 101 convention): a wider line is more
+    # "slippery", so it wants more of any given flow -- the intuition for parallel flow.
+    line_widths = susceptance_widths(pt) if line_widths is None else line_widths
+    coords = COORDS if coords is None else coords
+    tielist = list(ties) if ties is not None else (list(fp.ties) if fp is not None else [])
+    tcol = RIGHT_TIER_COLORS if tier_colors is None else tier_colors
+    aw = [atc.Award(r["source"], r["sink"], r["mw"]) for r in rights]
+
+    overl = set(atc.overloaded_lines(pt, aw, monitored)) if show_sft else set()
+    # Base line colour: a caller-supplied map (e.g. by balancing authority) if given, else the
+    # gold WECC-path / grey scheme. An overload (SFT failing) flags red and overrides either.
+    def _base(l):
+        if line_colors is not None:
+            return line_colors.get(l, "#CBD0D3")
+        return _WECC_PATH if l in tielist else "#CBD0D3"
+    lcolors = {l: ("#C0392B" if l in overl else _base(l)) for l in pt.lines}
+
+    fig = plt.figure(figsize=(13.0, 6.4))
+    gs = fig.add_gridspec(1, 2, width_ratios=[2.4, 1.3], wspace=0.02)
+    axn = fig.add_subplot(gs[0, 0])
+    axt = fig.add_subplot(gs[0, 1]); axt.axis("off")
+
+    # left: the network. The superposed-award flow rides on the lines (direction +
+    # flow/limit, red where the SFT fails); the rights are arcs labelled by path
+    # only -- the MW / ATC live in the table on the right.
+    plot_network_topology(
+        net, bus_colors=BUS_COLORS if bus_colors is None else bus_colors, bus_coords=coords,
+        supply_by_bus=supply_by_bus, demand_by_bus=demand_by_bus, bus_net_mw=bus_net_mw,
+        lmp_only=bus_net_mw is not None,
+        line_flows=atc.flow_dict(pt, aw), line_colors=lcolors, line_widths=line_widths,
+        flow_labels=True, constrained_lines=overl, ax=axn, title=title or "Scheduled bilateral rights")
+    draw_rights_arcs(axn, rights, coords, tier_colors=tier_colors, label_mw=False)
+
+    # right: the rights table -- path, scheduled MW, the ATC, and the % booked. ``atc_values``
+    # (e.g. a BA-level ATC the caller computed) overrides the standalone per-path TTC.
+    if atc_values is not None:
+        caps = list(atc_values)
+    elif show_atc:
+        caps = [atc.ttc(pt, r["source"], r["sink"], monitored=monitored)[0] for r in rights]
+    else:
+        caps = [None] * len(rights)
+    cells, pathcols = [], []
+    for idx, (r, cap) in enumerate(zip(rights, caps)):
+        path = f"{r['source']}→{r['sink']}"
+        pathcols.append(tcol.get(r.get("tier", "inter"), "#117A65"))
+        if cap is not None:
+            pct = pct_values[idx] if pct_values is not None else 100 * r["mw"] / cap
+            cells.append([path, f"{r['mw']:g}", f"{cap:.0f}", f"{pct:.0f}%"])
+        else:
+            cells.append([path, f"{r['mw']:g}"])
+    if col_labels is not None:
+        collab = col_labels
+    else:
+        collab = ["Right", "MW", "ATC", "%ATC"] if show_atc else ["Right", "MW"]
+    cw = [0.30, 0.30, 0.20, 0.20] if len(collab) == 4 else None
+    tbl = axt.table(cellText=cells, colLabels=collab, loc="center", cellLoc="center",
+                    bbox=[0.0, 0.14, 1.0, 0.72], colWidths=cw)
+    tbl.auto_set_font_size(False); tbl.set_fontsize(10)
+    nrow = len(cells) + 1
+    for (rr, cc), cell in tbl.get_celld().items():        # taller header row
+        cell.set_edgecolor("#999")
+        cell.set_height((1.8 if rr == 0 else 1.0) / (nrow + 0.8))
+    for j in range(len(collab)):                          # header row
+        tbl[(0, j)].set_text_props(fontweight="bold", color="white")
+        tbl[(0, j)].set_facecolor("#34495E")
+    for i, col in enumerate(pathcols):                    # path cell coloured to its arc
+        tbl[(i + 1, 0)].get_text().set_color(col)
+        tbl[(i + 1, 0)].get_text().set_fontweight("bold")
+    return fig
+
+
+def rights_payoff_figure(net, pt, rights, res, *, fp=None, coords=None,
+                         bus_colors=None, line_colors=None, line_widths=None,
+                         tier_colors=None, title=None,
+                         supply_by_bus=None, demand_by_bus=None, bus_net_mw=None):
+    """The **settlement** companion to :func:`rights_figure`: the same rights drawn
+    over the *unified-clearing* network --- nodal LMPs at every bus and the
+    dispatch flows on every line --- with each right's **FTR payoff** in the table.
+
+    Where :func:`rights_figure` asks *do these rights fit?* (the SFT / ATC view),
+    this asks *what do they pay?* A financial right from POR ``s`` to POD ``k`` for
+    ``q`` MW settles at the locational price spread it spans,
+    ``payoff = q * (lmp_k - lmp_s)`` --- positive where it delivers into a dearer
+    bus, negative where it counter-flows into a cheaper one. The table breaks that
+    out as **volume**, **price difference**, and **total payoff**, and totals to the
+    congestion rent when the set reconstructs the merchandising surplus.
+
+    Parameters mirror :func:`rights_figure`; ``res`` is the
+    :class:`~seams_engine.EngineResult` of the unified clearing (its ``lmp``,
+    ``flow_own`` and ``line_dual`` supply the prices, flows and binding lines).
+    Returns the figure.
+    """
+    import matplotlib.pyplot as plt
+    from seams_engine import susceptance_widths
+
+    coords = COORDS if coords is None else coords
+    line_widths = susceptance_widths(pt) if line_widths is None else line_widths
+    tcol = RIGHT_TIER_COLORS if tier_colors is None else tier_colors
+    lmp = res.lmp
+    binding = {l for l in pt.lines if abs(res.line_dual.get(l, 0.0)) > 1e-3}
+
+    def _base(l):
+        if line_colors is not None:
+            return line_colors.get(l, "#CBD0D3")
+        return "#CBD0D3"
+    lcolors = {l: ("#C0392B" if l in binding else _base(l)) for l in pt.lines}
+
+    fig = plt.figure(figsize=(13.0, 6.4))
+    gs = fig.add_gridspec(1, 2, width_ratios=[2.4, 1.3], wspace=0.02)
+    axn = fig.add_subplot(gs[0, 0])
+    axt = fig.add_subplot(gs[0, 1]); axt.axis("off")
+
+    # left: the priced network -- nodal LMPs + the unified dispatch flows, with the
+    # rights as POR->POD arcs on top (binding lines red).
+    plot_network_topology(
+        net, bus_colors=BUS_COLORS if bus_colors is None else bus_colors,
+        bus_coords=coords, bus_lmps=lmp,
+        supply_by_bus=supply_by_bus, demand_by_bus=demand_by_bus, bus_net_mw=bus_net_mw,
+        lmp_only=bus_net_mw is not None,
+        line_flows={l: float(res.flow_own[l]) for l in pt.lines},
+        line_colors=lcolors, line_widths=line_widths, constrained_lines=binding,
+        flow_labels=True, ax=axn, title=title or "Rights settled at the unified prices")
+    draw_rights_arcs(axn, rights, coords, tier_colors=tier_colors, label_mw=False)
+
+    # right: the payoff table -- volume, price difference, total payoff.
+    cells, pathcols, total = [], [], 0.0
+    for r in rights:
+        s, k, q = str(r["source"]), str(r["sink"]), float(r["mw"])
+        dp = lmp[k] - lmp[s]; pay = q * dp; total += pay
+        pathcols.append(tcol.get(r.get("tier", "inter"), "#117A65"))
+        cells.append([f"{s}→{k}", f"{q:g}", f"{dp:+.2f}", f"{pay:+,.0f}"])
+    cells.append(["total", "", "", f"{total:+,.0f}"])
+    collab = ["SFT Right\n(Path)", "SFT Volume\n(MW)", "Price diff\n($/MW)", "Payoff\n($)"]
+    tbl = axt.table(cellText=cells, colLabels=collab, loc="center", cellLoc="center",
+                    bbox=[0.0, 0.14, 1.0, 0.72], colWidths=[0.29, 0.29, 0.24, 0.18])
+    tbl.auto_set_font_size(False); tbl.set_fontsize(10)
+    nrow = len(cells) + 1                                  # header + data + total
+    for (r, c), cell in tbl.get_celld().items():           # taller header row
+        cell.set_edgecolor("#999")
+        cell.set_height((1.8 if r == 0 else 1.0) / (nrow + 0.8))
+    for j in range(len(collab)):
+        tbl[(0, j)].set_text_props(fontweight="bold", color="white")
+        tbl[(0, j)].set_facecolor("#34495E")
+    for i, col in enumerate(pathcols):
+        tbl[(i + 1, 0)].get_text().set_color(col)
+        tbl[(i + 1, 0)].get_text().set_fontweight("bold")
+    for j in range(len(collab)):                          # total row
+        tbl[(len(cells), j)].set_text_props(fontweight="bold")
+    return fig
+
+
+def self_schedule_figure(summary, *, suptitle=None):
+    """Two-panel view of the self-schedule incentive, from a
+    :func:`revenue_allocation.self_schedule_ledger` ``summary``.
+
+    Left -- generator output by bus, economic vs self-schedule: the merit-order
+    inversion (the cheap exporter backs down so the dearer self-scheduled unit can
+    run within the capped export). Right -- the conservation decomposition: the
+    rebate the rule hands the self-schedule splits exactly into the owner's private
+    gain and pure deadweight loss, and the rent pool shrinks by the whole rebate.
+    """
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    s = summary
+    fig, (axL, axR) = plt.subplots(
+        1, 2, figsize=(11, 4.2), gridspec_kw=dict(width_ratios=[1.25, 1.0]))
+
+    # ── Panel A: dispatch, economic vs self-schedule ────────────────────────
+    buses = [b for b in sorted(set(s["out_econ"]) | set(s["out_self"]),
+                               key=lambda b: s["bus_cost"].get(b, 0.0))
+             if s["out_econ"].get(b, 0.0) > 0.5 or s["out_self"].get(b, 0.0) > 0.5]
+    x = np.arange(len(buses)); w = 0.38
+    e = [s["out_econ"].get(b, 0.0) for b in buses]
+    f = [s["out_self"].get(b, 0.0) for b in buses]
+    axL.bar(x - w / 2, e, w, label="economic dispatch", color="#BDC3C7", ec="#7F8C8D")
+    cols = ["#C0392B" if b == s["source"]                       # forced-on dear unit
+            else "#2E86C1" if s["out_self"].get(b, 0.0) < s["out_econ"].get(b, 0.0) - 0.5
+            else "#7F8C8D" for b in buses]                      # backed-down cheap unit
+    axL.bar(x + w / 2, f, w, label="with self-schedule", color=cols, ec="#34495E")
+    for xi, b in zip(x, buses):
+        axL.annotate(f"${s['bus_cost'].get(b, 0):.0f}", (xi, max(s["out_econ"].get(b, 0.0),
+                     s["out_self"].get(b, 0.0))), textcoords="offset points",
+                     xytext=(0, 3), ha="center", fontsize=8, color="#34495E")
+    axL.set_xticks(x); axL.set_xticklabels([f"bus {b}" for b in buses])
+    axL.set_ylabel("output (MW)")
+    axL.set_title(f"Dispatch: self-scheduling the ${s['src_cost']:.0f} unit "
+                  f"displaces the cheap unit", fontsize=10)
+    axL.legend(fontsize=8, framealpha=0.9)
+    axL.spines[["top", "right"]].set_visible(False)
+
+    # ── Panel B: conservation -- the rebate = private gain + deadweight ──────
+    gain, dw, reb = s["private_gain"], s["deadweight"], s["rebate"]
+    axR.bar(0, gain, 0.5, color="#27AE60", ec="#1E8449")
+    axR.bar(0, dw, 0.5, bottom=gain, color="#922B21", ec="#641E16")
+    axR.annotate(f"private gain\nto self-scheduler\n+${gain:,.0f}", (0, gain / 2),
+                 ha="center", va="center", fontsize=8.5, color="white", fontweight="bold")
+    axR.annotate(f"deadweight loss\n(extra prod. cost)\n${dw:,.0f}",
+                 (0, gain + dw / 2), ha="center", va="center", fontsize=8,
+                 color="white", fontweight="bold")
+    axR.annotate(f"rebate drawn from\nrent pool: ${reb:,.0f}", (0.32, reb / 2),
+                 ha="left", va="center", fontsize=9,
+                 arrowprops=dict(arrowstyle="-[, widthB=2.6", color="#34495E"))
+    axR.set_xlim(-0.5, 1.1); axR.set_xticks([])
+    axR.set_ylabel("$/h")
+    axR.set_title(f"Rent pool: {s['pool_econ']:,.0f} to {s['pool_self']:,.0f} per hour\n"
+                  f"(the rebate is pure transfer + waste)", fontsize=10)
+    axR.spines[["top", "right"]].set_visible(False)
+
+    if suptitle:
+        fig.suptitle(suptitle, fontsize=12, fontweight="bold")
+    fig.tight_layout()
     return fig
 
 

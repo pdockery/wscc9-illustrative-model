@@ -1,7 +1,57 @@
+# ---------------------------------------------------------------------
+#  Transient / build artifacts
+# ---------------------------------------------------------------------
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
-# generated figure/table outputs
+~$*                      # Office lock/temp files (e.g. ~$Lab Notes.docx)
+
+# Generated outputs (regenerable from source — not tracked)
 *.png
-*.pdf
 *.csv
+
+# Per-source .bib stubs dropped into Sources/ are merged into the top-level
+# references.bib — keep them local, don't commit duplicates of the bibliography.
+Sources/**/*.bib
+
+# ---------------------------------------------------------------------
+#  PDFs: ignored by default, then public source documents re-included
+# ---------------------------------------------------------------------
+#  Policy: only PUBLIC documents live in the repo. Government / regulatory
+#  / ISO / stakeholder documents are public and tracked. Copyrighted
+#  academic papers and books are NOT committed — find them via the `url`
+#  field in references.bib (author sites, FERC eLibrary, caiso.com, etc.).
+#  Generated PDFs (figures, the built LaTeX notes) stay ignored.
+*.pdf
+
+# -- Public documents: tracked --
+!Sources/ferc-orders/*.pdf
+!Sources/ferc-filings-and-iso-policy/*.pdf
+!Sources/msc-opinions/*.pdf
+!Sources/stakeholder-comments/*.pdf
+!Sources/institutional-context/PGP+Organized+Market+Retrospective+Full+Report.pdf
+!Sources/institutional-context/november22_2005jointcomments-iso_rtocouncilregardingfercnoiindocketno_rm05-25-000.pdf
+
+# The lab's own Lab Notes are NOT published yet — keep every format
+# (.md / .docx / .pdf) out of the public repo until the lab is ready:
+Sources/Lab Notes - Congestion Revenue Allocation.*
+
+# -- Open-access academic (CC BY) — safe to commit --
+!Sources/academic-literature/Kiesling - governing the grid - S1744137426100423.pdf
+
+# -- Copyrighted academic material: link-only (see `url` in references.bib) --
+#  Sources/academic-literature/* and the O'Neill et al. Elsevier chapter
+#  stay ignored. Some are freely posted by their authors and MAY be
+#  redistributable; uncommenting a line below includes that PDF — that is
+#  the lab's redistribution decision to make, source by source:
+# !Sources/academic-literature/flow0800r.pdf
+# !Sources/academic-literature/Joskow-MerchantTransmissionInvestment-2005.pdf
+# !Sources/academic-literature/JOSKOW-Lessons Learned From Electricity Market Liberalization.pdf
+# !Sources/academic-literature/The Competitive Effects of Transmission Capacity in a Deregulated Electricity Industry.pdf
+# !Sources/academic-literature/HOGAN-contract network -BF00133621.pdf
+#  Always link-only (paywalled, no open author version):
+#    Sources/academic-literature/HOGAN-PrimerTransmissionBenefits-2018.pdf
+#    Sources/institutional-context/IndependentSystemOperators-...-main.pdf  (Elsevier)
+
+# -- Lab note: status-quo merchandising (Powerex charitable reading) -- local only --
+notes/status_quo_merchandising/

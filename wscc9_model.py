@@ -57,6 +57,29 @@ DEFAULT_GEN_FLEET = {
 #: Fixed load at each bus (MW).
 DEFAULT_LOADS = {"5": 90.0, "7": 100.0, "9": 125.0}
 
+
+def fleet_with_backstop(price: float = 90.0, buses=None, p_nom=None, base=None, loads=None):
+    """The teaching fleet plus a high-priced **residual backstop** unit at each load
+    bus (default the load buses), priced above every real unit so it clears only as
+    a last resort -- the balancing resource a balancing authority leans on when a
+    constraint chokes off cheaper delivery, so a self-solving BA is always feasible.
+    Excluded from the bilateral double auction in notebook 102; in the nodal engine
+    it is simply merit-order-last. The redispatch premium a BA pays is the cost of
+    this backstop relative to the cheaper resources a unified engine would deploy.
+
+    Each backstop is sized to its bus's own load by default (``p_nom=None``): a load
+    bus's balancing reserve need not exceed the load it backs, which keeps the
+    merit-order picture honest. Pass a scalar ``p_nom`` to override.
+    """
+    base = DEFAULT_GEN_FLEET if base is None else base
+    loads = DEFAULT_LOADS if loads is None else loads
+    buses = list(DEFAULT_LOADS) if buses is None else [str(b) for b in buses]
+    fleet = dict(base)
+    for b in buses:
+        cap = float(p_nom) if p_nom is not None else float(loads.get(str(b), 0.0))
+        fleet[f"backstop_{b}"] = {"bus": str(b), "cost": float(price), "p_nom": cap}
+    return fleet
+
 #: Three-BA teaching scenario (notebooks 112 / 212). Nodes 2 and 3 each carry gen +
 #: load and are individually self-sufficient (node 3 cheaper + more load; node 2
 #: pricier + less load); the two canonical cheap units move to the formerly-transit

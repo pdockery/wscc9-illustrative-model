@@ -6,11 +6,13 @@ congestion rent, and market-seams concepts from the ground up on the classic **W
 network, clears a DC-OPF with PTDF shift factors, and renders matching network +
 nodal-dispatch (chord) figures. No external data files are needed.
 
-The notebooks share four small teaching libraries, so the modelling stays consistent
+The notebooks share a set of small teaching libraries, so the modelling stays consistent
 across the series and a student can read a notebook top-to-bottom or open the library to
 see how a piece works. The numbering is a learning pathway — the **hundreds digit is the
 difficulty tier** (100 fundamentals, 200 core issue, 300 advanced) and the **last digit
-is the track** (x01 = congestion-revenue allocation, x02 = market seams).
+is the track**: x01 congestion-revenue allocation, x02 market seams (and the bilateral
+scheduling that precedes a centralized market, 102), x03 transmission service, x11
+available transfer capability, x22 intertie scheduling.
 
 ## Run it in your browser (no install)
 
@@ -23,6 +25,29 @@ packages and pulls in the helper modules automatically.
   (net-interchange) constraint and transfer rent, self-schedules, the three settlement
   ledgers, and a fully configurable sandbox.
   [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pdockery/wscc9-illustrative-model/blob/main/101_nodal_market_fundamentals.ipynb)
+
+- **102 · Bilateral trading as a double auction** — a numerical model of the bilateral
+  world, which has **no central clearing**: it produces the day-ahead pre-schedule (the
+  bilateral analogue of unit commitment) as a **repeated discriminatory double auction**
+  (Nicolaisen–Petrov–Tesfatsion). Over rounds of back-and-forth, sellers and buyers draw
+  offers from their perceived price distributions and concede until the must-serve load
+  procures its **full** volume; each pair settles at the bid-ask **midpoint**. Three levers,
+  one section each: the **number of parties** (liquidity — more parties tighten the spread,
+  Rustichini–Satterthwaite–Williams / Gode–Sunder); **risk aversion and the price-risk
+  distribution** (the two-sided forward premium, Bessembinder–Lemmon — each generator a
+  single fixed marginal cost); and **real-time balancing** — the rights-feasible schedule
+  overloads the grid, and a causer-pays **redispatch** restores feasibility. Mirrors 101's
+  formal exposition. Builds on `atc.py` + `bilateral.py`.
+  [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pdockery/wscc9-illustrative-model/blob/main/102_bilateral_spot_iteration.ipynb)
+
+- **111 · ATC and the simultaneous-feasibility test** — the OATT / contract-path world
+  that precedes nodal pricing: each generator first **plans its portfolio** of rights
+  to profitable load centers, then point-to-point service, Available Transfer Capability
+  (`ATC = TTC − TRM − ETC − CBM`), and the simultaneous-feasibility test a *set* of
+  awards must pass. Shows how ATC posted path-by-path, and ATC summed across two
+  balancing authorities, **oversubscribes** the feasible set through loop flow.
+  Builds on `atc.py` + `bilateral.py`.
+  [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pdockery/wscc9-illustrative-model/blob/main/111_atc_simultaneous_feasibility.ipynb)
 
 - **112 · Three balancing authorities** — a third BA and single-node BAs (co-located
   generation and load); three-BA dispatch, per-BA settlement, and autarky-vs-unified.
@@ -63,6 +88,8 @@ packages and pulls in the helper modules automatically.
 | File | Role |
 |------|------|
 | `101_nodal_market_fundamentals.ipynb` | Fundamentals: nodal LMPs, congestion + transfer rent, self-schedules, ledgers, sandbox |
+| `102_bilateral_spot_iteration.ipynb` | Fundamentals: bilateral trading as a repeated double auction (full procurement), levers for liquidity / risk premium, causer-pays real-time balancing |
+| `111_atc_simultaneous_feasibility.ipynb` | Fundamentals: portfolio planning, ATC, the simultaneous-feasibility test, combined-ATC oversubscription |
 | `112_three_ba_fundamentals.ipynb` | Fundamentals: a third BA and single-node BAs |
 | `201_congestion_revenue_allocation.ipynb` | Two-BA congestion-revenue allocation (Method 1/2) |
 | `202_market_seams.ipynb` | Two markets; three seam issues + trader risk + seam ledger |
@@ -72,6 +99,8 @@ packages and pulls in the helper modules automatically.
 | `wscc9_model.py` | Network, fleet/loads, the market-engine factory, layout constants |
 | `footprints.py` | Footprint partitions (balancing authorities / markets) and line assignment |
 | `revenue_allocation.py` | Settlement, congestion/transfer-rent allocation, position ledgers |
+| `atc.py` | Available Transfer Capability, path TTC, and the simultaneous-feasibility test (used by 102/111) |
+| `bilateral.py` | The repeated bilateral double auction (`double_auction_clear`, forward risk, causer-pays redispatch) and the Cournot must-serve model + portfolio planning (used by 102/111) |
 | `wscc9_figures.py` | The shared network + nodal-dispatch composite figures |
 | `ieee9_network.py` | Builds the IEEE/WSCC 9-bus PyPSA network |
 | `seams_engine.py` | PTDF DC-OPF clearing engine (`scipy.linprog`) + LMP decomposition |

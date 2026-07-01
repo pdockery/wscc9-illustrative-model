@@ -567,6 +567,9 @@ def plot_nodal_circlize(
     annotate_roles=False,
     axis_key=False,
     demand_segments=None,
+    gen_bid_labels=True,
+    gen_cost_labels=False,
+    block_mw_unit=True,
 ):
     """
     Create a circlize chord diagram showing nodal generation, demand, and flows.
@@ -677,7 +680,12 @@ def plot_nodal_circlize(
         default=0,
     )
     max_lmp = max(_lmps.values()) if _lmps else 0
-    norm_price = max(min(max(max_bid, max_lmp) * 1.1, price_cap), 1)
+    # also cover any opt-in dotted lines (e.g. the bilateral cleared-price staircase), so
+    # they fit the radial range instead of clamping at the top.
+    max_line = max((gen_marginal_costs or {}).values(), default=0)
+    max_seg = max((float(s.get('price', 0)) for segs in (demand_segments or {}).values()
+                   for s in segs), default=0)
+    norm_price = max(min(max(max_bid, max_lmp, max_line, max_seg) * 1.1, price_cap), 1)
 
     # --- Sector sizing (all buses, transit buses get small fixed size) ---
     gap = 5  # MW gap between gen and load within a sector
@@ -780,41 +788,67 @@ def plot_nodal_circlize(
             gcol = gen.get('color', bc)
             gcol_dark = _darken(gcol) if 'color' in gen else bc_dark
 
-            bar_top = _price_to_r(price)
-
             # Clamp coordinates to sector bounds to avoid pycirclize ValueError
             x_end_nameplate = min(x_pos + nameplate, size)
             x_end_bid = min(x_pos + bid_vol, size)
             x_end_acc = min(x_pos + accepted, size)
 
-            # Nameplate capacity (very faded — withheld capacity)
-            if x_end_nameplate > x_pos + 0.01:
-                track.rect(x_pos, x_end_nameplate, r_lim=(55, bar_top),
-                           fc=gcol, alpha=0.08, ec=gcol, lw=0.5, ls='--')
+            # A unit carrying a linear marginal-cost curve (``mc0`` + ``mc_slope``·g)
+            # is drawn as a sloped WEDGE under its MC line rather than a flat bar:
+            # the bar top rises with output, so the rising offer is visible and the
+            # gap to the dashed LMP line is the per-MW inframarginal rent that varies
+            # along the curve. A flat unit keeps the original three-level rectangle.
+            has_curve = 'mc_slope' in gen
+            if has_curve:
+                _mc0, _slope = gen['mc0'], gen['mc_slope']
+                bar_top = _price_to_r(min(_mc0 + _slope * nameplate, norm_price))
 
-            # Bid volume (faded — offered but not accepted)
-            if bid_vol > 0 and x_end_bid > x_pos + 0.01:
-                track.rect(x_pos, x_end_bid, r_lim=(55, bar_top),
-                           fc=gcol, alpha=0.25, ec=gcol, lw=0.5)
+                def _wedge(xa, xb, **kw):
+                    if xb <= xa + 0.01:
+                        return
+                    xs = np.linspace(xa, xb, 16)
+                    vs = np.clip(_mc0 + _slope * (xs - x_pos), 0.5, norm_price)
+                    track.fill_between(xs.tolist(), vs.tolist(), 0,
+                                       vmin=0, vmax=norm_price, **kw)
 
-            # Accepted dispatch (solid bus color)
-            if accepted > 0 and x_end_acc > x_pos + 0.01:
-                track.rect(x_pos, x_end_acc, r_lim=(55, bar_top),
-                           fc=gcol, alpha=0.7, ec=gcol_dark, lw=0.8)
+                _wedge(x_pos, x_end_nameplate, fc=gcol, alpha=0.08, ec=gcol, lw=0.5, ls='--')
+                _wedge(x_pos, x_end_bid, fc=gcol, alpha=0.25, ec=gcol, lw=0.5)
+                _wedge(x_pos, x_end_acc, fc=gcol, alpha=0.7, ec=gcol_dark, lw=0.8)
+            else:
+                bar_top = _price_to_r(price)
+
+                # Nameplate capacity (very faded — withheld capacity)
+                if x_end_nameplate > x_pos + 0.01:
+                    track.rect(x_pos, x_end_nameplate, r_lim=(55, bar_top),
+                               fc=gcol, alpha=0.08, ec=gcol, lw=0.5, ls='--')
+
+                # Bid volume (faded — offered but not accepted)
+                if bid_vol > 0 and x_end_bid > x_pos + 0.01:
+                    track.rect(x_pos, x_end_bid, r_lim=(55, bar_top),
+                               fc=gcol, alpha=0.25, ec=gcol, lw=0.5)
+
+                # Accepted dispatch (solid bus color)
+                if accepted > 0 and x_end_acc > x_pos + 0.01:
+                    track.rect(x_pos, x_end_acc, r_lim=(55, bar_top),
+                               fc=gcol, alpha=0.7, ec=gcol_dark, lw=0.8)
 
             # Label: the BID (price × volume) on each gen bar, mirroring the
-            # load side which prints its MW in-track. (Unit name dropped.)
-            mid_x = x_pos + nameplate / 2
-            if price < 0:
-                price_str = f"-${abs(price):.0f}"
-            elif price > norm_price:
-                price_str = f"${price:,.0f}"
-            else:
-                price_str = f"${price:.0f}"
-            track.text(f"{price_str} × {bid_vol:.0f} MW",
-                       x=mid_x, r=bar_top + 5,
-                       fontsize=_fs_gen, color=gcol_dark,
-                       fontweight='bold')
+            # load side which prints its MW in-track. (Unit name dropped.) Opt out
+            # via gen_bid_labels=False when the bar height is a cost the caller would
+            # rather not annotate (e.g. the bilateral book, which labels the cleared
+            # price on the dotted line instead -- see gen_cost_labels below).
+            if gen_bid_labels and not has_curve:
+                mid_x = x_pos + nameplate / 2
+                if price < 0:
+                    price_str = f"-${abs(price):.0f}"
+                elif price > norm_price:
+                    price_str = f"${price:,.0f}"
+                else:
+                    price_str = f"${price:.0f}"
+                track.text(f"{price_str} × {bid_vol:.0f} MW",
+                           x=mid_x, r=bar_top + 5,
+                           fontsize=_fs_gen, color=gcol_dark,
+                           fontweight='bold')
 
             # Dispatched MW printed INSIDE the gen track (mirrors the load side,
             # which prints its MW in-track), while the bid stays outside the bar.
@@ -822,8 +856,15 @@ def plot_nodal_circlize(
             # always sits inside the bar regardless of its height; a fixed floor
             # would push a short bar's label out on top of the track.
             if accepted > 0.5:
-                track.text(f"{accepted:.0f} MW",
-                           x=x_pos + accepted / 2, r=(55 + bar_top) / 2,
+                # For a wedge, place the MW label inside the bar at the ACCEPTED
+                # edge's height (the peak ``bar_top`` is the nameplate edge, well above).
+                if has_curve:
+                    _r_acc = _price_to_r(min(_mc0 + _slope * accepted / 2, norm_price))
+                    _lbl_r = (55 + _r_acc) / 2
+                else:
+                    _lbl_r = (55 + bar_top) / 2
+                track.text(f"{accepted:.0f}{' MW' if block_mw_unit else ''}",
+                           x=x_pos + accepted / 2, r=_lbl_r,
                            fontsize=_fs_gen, color=gcol_dark,
                            fontweight='bold')
 
@@ -846,14 +887,23 @@ def plot_nodal_circlize(
                 uid = gen['unit_id']
                 if uid in gen_marginal_costs:
                     mc_val = gen_marginal_costs[uid]
+                    mc_draw = min(mc_val, norm_price)   # clamp to the radial range (label keeps mc_val)
                     mc_x_end = min(mc_x + nameplate, size)
                     if mc_val > 0 and mc_x_end > mc_x + 1:
                         track.line(
                             [mc_x + 0.5, mc_x_end - 0.5],
-                            [mc_val, mc_val],
+                            [mc_draw, mc_draw],
                             vmin=0, vmax=norm_price,
                             color=bc_dark, lw=1.5, ls=':', zorder=10,
                         )
+                        # Opt-in: print the line's $value above each segment (used by the
+                        # bilateral book to show the cleared price of each staircase step).
+                        if gen_cost_labels:
+                            track.text(f"${mc_val:.0f}",
+                                       x=(mc_x + mc_x_end) / 2,
+                                       r=min(99, _price_to_r(mc_val) + 4),
+                                       fontsize=_fs_gen, color=bc_dark,
+                                       fontweight='bold', zorder=11)
                 mc_x += nameplate
 
         # LMP dashed line at the cleared bus LMP. Each solid gen bar top is that
@@ -904,7 +954,7 @@ def plot_nodal_circlize(
                                fc=scol, alpha=float(seg.get('alpha', 0.35)),
                                ec=scol_dark, lw=0.8)
                     if mw > 0.5:
-                        track.text(f"{mw:.0f} MW", x=(x0 + x1) / 2,
+                        track.text(f"{mw:.0f}{' MW' if block_mw_unit else ''}", x=(x0 + x1) / 2,
                                    r=(55 + seg_top) / 2,
                                    fontsize=_fs_load, color=scol_dark,
                                    fontweight='bold')
@@ -927,7 +977,7 @@ def plot_nodal_circlize(
                 mid_load = load_start + dem / 2
                 # Radius = midpoint of the filled load bar (55 -> load_bar_top), so the
                 # MW label stays inside the bar even when the LMP (bar height) is low.
-                track.text(f"{dem:.0f} MW", x=mid_load, r=(55 + load_bar_top) / 2,
+                track.text(f"{dem:.0f}{' MW' if block_mw_unit else ''}", x=mid_load, r=(55 + load_bar_top) / 2,
                            fontsize=_fs_load, color=bc_dark,
                            fontweight='bold')
                 # Price label on load bar (suppressed in compact mode and whenever a
@@ -1394,6 +1444,7 @@ def plot_network_topology(
     bus_colors=None,
     bus_coords=None,
     bus_lmps=None,
+    bus_net_mw=None,
     demand_served_by_bus=None,
     line_flows=None,
     line_widths=None,
@@ -1409,6 +1460,7 @@ def plot_network_topology(
     title_fontsize=13,
     lmp_only=False,
     flow_label_fontsize=9,
+    flow_labels=True,
     parallel_gap=0.12,
 ):
     """
@@ -1558,23 +1610,33 @@ def plot_network_topology(
                                         mutation_scale=8 + 2.4 * line_lw),
                         zorder=2)
 
-        # Flow label: "flow/capacity" offset perpendicular to line
-        flow_label = f"{abs(flow):.0f}/{s_nom:.0f}"
-        label_color = '#C0392B' if constrained else '#7F8C8D'
-        fontweight = 'bold' if constrained else 'normal'
-        # Compute perpendicular offset so label sits beside the arrow
-        ldx, ldy = x1 - x0, y1 - y0
-        ll = (ldx**2 + ldy**2) ** 0.5
-        if ll > 0:
-            perp_x, perp_y = -ldy / ll * 0.25, ldx / ll * 0.25
-        else:
-            perp_x, perp_y = 0, 0.25
-        ax.text(mx + perp_x, my + perp_y, flow_label,
-                fontsize=flow_label_fontsize, color=label_color,
-                fontweight=fontweight, ha='center', va='center',
-                bbox=dict(fc='white', ec='none', alpha=0.8, pad=1))
+        # Flow label: "flow/capacity" offset perpendicular to line (opt-out via
+        # flow_labels=False). Skip lines carrying ~no flow so dead paths don't print
+        # a "0/limit" tag; a constrained line is always labelled.
+        if flow_labels and (abs(flow) > 0.5 or constrained):
+            flow_label = f"{abs(flow):.0f}/{s_nom:.0f}"
+            label_color = '#C0392B' if constrained else '#7F8C8D'
+            fontweight = 'bold' if constrained else 'normal'
+            # Compute perpendicular offset so label sits beside the arrow
+            ldx, ldy = x1 - x0, y1 - y0
+            ll = (ldx**2 + ldy**2) ** 0.5
+            if ll > 0:
+                perp_x, perp_y = -ldy / ll * 0.25, ldx / ll * 0.25
+            else:
+                perp_x, perp_y = 0, 0.25
+            ax.text(mx + perp_x, my + perp_y, flow_label,
+                    fontsize=flow_label_fontsize, color=label_color,
+                    fontweight=fontweight, ha='center', va='center',
+                    bbox=dict(fc='white', ec='none', alpha=0.8, pad=1))
 
     # --- Draw buses ---
+    # Chart centre (mean of the drawn buses) -- used to push per-bus labels
+    # radially OUTWARD (left nodes label left, right right, top up, bottom down)
+    # so the chips clear the line-flow tags instead of all shifting one way.
+    _bxy = [coords[b] for b in all_buses if b in coords]
+    _cx = sum(p[0] for p in _bxy) / len(_bxy) if _bxy else 0.0
+    _cy = sum(p[1] for p in _bxy) / len(_bxy) if _bxy else 0.0
+
     for bus in all_buses:
         if bus not in coords:
             continue
@@ -1606,14 +1668,36 @@ def plot_network_topology(
                     ha='center', va='center', color='white', zorder=4)
 
         # lmp_only: skip the gen/bid/load info box entirely (that detail now lives
-        # in the circlize panel) and print only the LMP as plain text, no box.
+        # in the circlize panel) and print only a per-bus annotation, no info box.
+        # With bus_net_mw given, label the NET INJECTION (dispatched generation +,
+        # load -) in a green/maroon chip -- for a flow-focused panel where price is
+        # better read off the dispatch ring; otherwise fall back to the LMP.
         if lmp_only:
-            if bus_lmps and bus in bus_lmps:
+            # radial push-out: offset the chip away from the chart centre, and anchor
+            # the text on the side facing the node so it reads outward.
+            rdx, rdy = x - _cx, y - _cy
+            rl = (rdx * rdx + rdy * rdy) ** 0.5 or 1.0
+            ox, oy = 28 * rdx / rl, 28 * rdy / rl
+            _ha = 'left' if ox > 3 else ('right' if ox < -3 else 'center')
+            _va = 'bottom' if oy > 3 else ('top' if oy < -3 else 'center')
+            if bus_net_mw is not None and abs(bus_net_mw.get(bus, 0.0)) > 0.5:
+                mw = bus_net_mw[bus]
+                txt = f"+{mw:.0f} MW" if mw > 0 else f"{mw:.0f} MW"
+                if bus_lmps and bus in bus_lmps:        # price alongside the injection
+                    txt += f"\n${bus_lmps[bus]:.1f}"
+                col = '#1E8449' if mw > 0 else '#922B21'
+                ax.annotate(txt, (x, y), fontsize=annot_fontsize + 2, color=col,
+                            fontweight='bold', ha=_ha, va=_va,
+                            xytext=(ox, oy), textcoords='offset points',
+                            bbox=dict(boxstyle='round,pad=0.25', fc='white',
+                                      ec=col, lw=1.2, alpha=0.92),
+                            arrowprops=dict(arrowstyle='-', color=col, lw=0.7,
+                                            alpha=0.5, shrinkA=2, shrinkB=3), zorder=5)
+            elif bus_lmps and bus in bus_lmps:
                 ax.annotate(f"${bus_lmps[bus]:.1f}", (x, y),
                             fontsize=annot_fontsize + 2, color=bc_dark,
-                            fontweight='bold',
-                            xytext=(12, -10), textcoords='offset points',
-                            zorder=5)
+                            fontweight='bold', ha=_ha, va=_va,
+                            xytext=(ox, oy), textcoords='offset points', zorder=5)
             continue
 
         # Build annotation text. Optional colour-matched node header so the info
@@ -1691,6 +1775,7 @@ def plot_combined_letter(
     *,
     bus_colors=None,
     bus_lmps=None,
+    bus_net_mw=None,
     line_flows=None,
     line_widths=None,
     line_colors=None,
@@ -1706,6 +1791,9 @@ def plot_combined_letter(
     annotate_roles=False,
     axis_key=False,
     demand_segments=None,
+    gen_bid_labels=True,
+    gen_cost_labels=False,
+    block_mw_unit=True,
     all_buses=None,
     title_left='Network — DC power flow',
     title_right='Nodal dispatch - - merit order, demand, PTDF gen->load',
@@ -1716,6 +1804,7 @@ def plot_combined_letter(
     bus_coords=None,
     center_bus=None,
     start=0,
+    network_show_lmp=True,
 ):
     """Letter-size composite: network topology (left) + circlize/chord (right).
 
@@ -1752,7 +1841,8 @@ def plot_combined_letter(
     # Left: network topology -- numbers outside the bubble, colour-matched boxes.
     plot_network_topology(
         network, supply_by_bus, demand_by_bus,
-        bus_colors=bus_colors, bus_lmps=bus_lmps, bus_coords=bus_coords,
+        bus_colors=bus_colors, bus_lmps=(bus_lmps if network_show_lmp else None),
+        bus_net_mw=bus_net_mw, bus_coords=bus_coords,
         line_flows=line_flows, line_widths=line_widths, line_colors=line_colors,
         constrained_lines=constrained_lines,
         number_position='outside', box_node_header=False, lmp_only=True,
@@ -1769,6 +1859,8 @@ def plot_combined_letter(
         group_label_fontsize=group_label_fontsize, show_group_labels=show_group_labels,
         annotate_roles=annotate_roles, axis_key=axis_key,
         demand_segments=demand_segments,
+        gen_bid_labels=gen_bid_labels, gen_cost_labels=gen_cost_labels,
+        block_mw_unit=block_mw_unit,
         ax=ax_circ, label_fontsize=label_fontsize, compact=True,
         show_legend=False, sector_order=sector_order,
         start=start, center_bus=center_bus,
