@@ -1722,6 +1722,12 @@ def plot_network_topology(
                 annotations.append(f"Load: {served:.0f}/{load_mw:.0f} MW")
             else:
                 annotations.append(f"Load: {load_mw:.0f} MW")
+        # Net injection (+) / withdrawal (−) chip in the info box: dispatched gen −
+        # served load + exo, so a flow-focused topology reads what each bus puts on
+        # the wires, not just its price. Only when bus_net_mw is supplied.
+        if bus_net_mw is not None and abs(bus_net_mw.get(bus, 0.0)) > 0.5:
+            _nmw = bus_net_mw[bus]
+            annotations.append(f"Net: +{_nmw:.0f} MW" if _nmw > 0 else f"Net: {_nmw:.0f} MW")
         if bus_lmps and bus in bus_lmps:
             annotations.append(f"LMP: ${bus_lmps[bus]:.1f}")
 
