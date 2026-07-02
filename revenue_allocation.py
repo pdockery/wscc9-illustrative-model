@@ -154,24 +154,36 @@ def border_separation(fp, res, pt):
 
 def allocate_congestion_rent(fp, res, pt, loads, unassigned_split=0.5):
     """Allocate total congestion rent to the two footprints under both methods.
-    Rent follows the line assignment; rent on unassigned lines is split
-    unassigned_split / (1 − unassigned_split). Method 2 rebates the cross-border
-    separation τ to the net-payer footprint, funded by the other."""
+
+    **Method 1 — rent follows the wire.** Each footprint keeps the rent on the lines
+    *assigned* to it (``R_own``); rent on unassigned lines is split unassigned_split /
+    (1 − unassigned_split).
+
+    **Method 2 — rent follows the price impact.** Each footprint keeps the congestion
+    revenue its own gen-to-load flow creates, ``N_a^c = -Σ_m μ_m F_m^a``
+    (:func:`regional_congestion`) — the write-up's rule: the share of the rent tied to a
+    region's gen-to-load impact on the binding constraints goes back to the load that
+    paid it. Method 1 and Method 2 each sum to R, so their difference is a single
+    cross-border rebate ``τ`` off Method 1, positive to the net-payer footprint.
+
+    (The tie-based :func:`border_separation` is still returned as ``sep`` for the
+    transfer-rent split of Section 5, but it no longer sets Method 2.)"""
     lr, sep = line_rent_table(fp, res, pt), border_separation(fp, res, pt)
     R = lr["rent"].sum()
     R_unassigned = lr[lr.home.isna()]["rent"].sum()
     R_own = {ba: lr[lr.home == ba]["rent"].sum() for ba in fp.names}
-    R_border = sep["sep_rent"].sum() if len(sep) else 0.0
+    rc = regional_congestion(fp, res, pt, loads)
+    Nc = {ba: rc[ba]["line_congestion"] for ba in fp.names}   # N_a^c, the write-up's -Σ μ_m F_m^a
     settle = ba_settlement(fp, res, loads)
     hedged_ba = max(fp.names, key=lambda ba: settle[ba]["net_into_pool"])
     funding_ba = [ba for ba in fp.names if ba != hedged_ba][0]
 
     alloc = {ba: dict(R_own=R_own[ba], unassigned_share=unassigned_split * R_unassigned,
-                      method1=R_own[ba] + unassigned_split * R_unassigned) for ba in fp.names}
-    tau = R_border
-    alloc[hedged_ba]["method2"] = alloc[hedged_ba]["method1"] + tau
-    alloc[funding_ba]["method2"] = alloc[funding_ba]["method1"] - tau
-    summary = dict(R=R, R_unassigned=R_unassigned, R_own=R_own, R_border=R_border,
+                      method1=R_own[ba] + unassigned_split * R_unassigned,
+                      method2=Nc[ba]) for ba in fp.names}
+    tau = alloc[hedged_ba]["method2"] - alloc[hedged_ba]["method1"]   # cross-border rebate to the net-payer
+    summary = dict(R=R, R_unassigned=R_unassigned, R_own=R_own, Nc=Nc,
+                   R_border=sep["sep_rent"].sum() if len(sep) else 0.0,
                    hedged_ba=hedged_ba, funding_ba=funding_ba, tau=tau)
     return pd.DataFrame(alloc).T[["R_own", "unassigned_share", "method1", "method2"]], summary, lr, sep
 

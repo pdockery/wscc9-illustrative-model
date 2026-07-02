@@ -56,6 +56,8 @@ def footprint_figure(
     bus_coords=None, ring_order=None, center_bus=None,
     title_left="Network -- DC power flow",
     title_right="Nodal dispatch -- merit order, demand & flows",
+    figsize=(11, 6.2),
+    panel_ratios=(1, 1),
 ):
     """Combined network + nodal-dispatch composite for one clearing.
 
@@ -177,6 +179,7 @@ def footprint_figure(
         bus_coords=bus_coords if bus_coords is not None else COORDS,
         center_bus=center_bus if center_bus is not None else CENTER_BUS,
         title_left=title_left, title_right=title_right, suptitle=suptitle,
+        figsize=figsize, panel_ratios=panel_ratios,
     )
 
     _coords = bus_coords if bus_coords is not None else COORDS
@@ -300,7 +303,7 @@ def transfer_figure(net, pt, fp, engine, res, ebar, tie_cap, suptitle=None, **kw
 
 
 def draw_rights_arcs(ax, rights, coords=None, *, tier_colors=None, rad=0.22,
-                     label=True, atc_caps=None, label_mw=True):
+                     label=True, atc_caps=None, label_mw=True, label_fontsize=7.5):
     """Overlay sold point-to-point transmission rights as directed POR->POD arcs.
 
     ``rights`` is a list of dicts ``{'source','sink','mw', 'tier'?, 'honored'?}``:
@@ -347,7 +350,7 @@ def draw_rights_arcs(ax, rights, coords=None, *, tier_colors=None, rad=0.22,
                 # path only; the MW / ATC live in the table beside the graph
                 tag = f"{s}→{k}" + ("" if honored else " (curt.)")
             ax.annotate(tag, mid + 0.5 * rad * bulge + 0.30 * bunit,
-                        ha="center", va="center", fontsize=7.5,
+                        ha="center", va="center", fontsize=label_fontsize,
                         color=col, fontweight="bold", zorder=8,
                         bbox=dict(boxstyle="round,pad=0.2", fc="white", ec=col,
                                   lw=1, alpha=0.92))
@@ -358,7 +361,7 @@ def rights_figure(net, pt, rights, *, fp=None, ties=None, coords=None,
                   monitored="all", title=None, bus_colors=None, tier_colors=None,
                   line_colors=None, line_widths=None, show_atc=False, show_sft=True,
                   supply_by_bus=None, demand_by_bus=None, bus_net_mw=None,
-                  col_labels=None, atc_values=None, pct_values=None):
+                  col_labels=None, atc_values=None, pct_values=None, font_scale=1.0):
     """The standard "transmission rights" view: network panel + rights table.
 
     Two panels side by side so the graph stays uncluttered and the numbers are
@@ -412,8 +415,13 @@ def rights_figure(net, pt, rights, *, fp=None, ties=None, coords=None,
         supply_by_bus=supply_by_bus, demand_by_bus=demand_by_bus, bus_net_mw=bus_net_mw,
         lmp_only=bus_net_mw is not None,
         line_flows=atc.flow_dict(pt, aw), line_colors=lcolors, line_widths=line_widths,
-        flow_labels=True, constrained_lines=overl, ax=axn, title=title or "Scheduled bilateral rights")
-    draw_rights_arcs(axn, rights, coords, tier_colors=tier_colors, label_mw=False)
+        flow_labels=True, constrained_lines=overl, ax=axn, title=title or "Scheduled bilateral rights",
+        node_number_fontsize=10 * font_scale, annot_fontsize=6 * font_scale,
+        flow_label_fontsize=9 * font_scale, title_fontsize=13 * font_scale,
+        net_label_offset=28.0 / font_scale,
+        title_pad=(None if font_scale == 1.0 else 6.0 + 45.0 * (font_scale - 1.0)))
+    draw_rights_arcs(axn, rights, coords, tier_colors=tier_colors, label_mw=False,
+                     label_fontsize=7.5 * font_scale)
 
     # right: the rights table -- path, scheduled MW, the ATC, and the % booked. ``atc_values``
     # (e.g. a BA-level ATC the caller computed) overrides the standalone per-path TTC.
@@ -456,7 +464,8 @@ def rights_figure(net, pt, rights, *, fp=None, ties=None, coords=None,
 def rights_payoff_figure(net, pt, rights, res, *, fp=None, coords=None,
                          bus_colors=None, line_colors=None, line_widths=None,
                          tier_colors=None, title=None,
-                         supply_by_bus=None, demand_by_bus=None, bus_net_mw=None):
+                         supply_by_bus=None, demand_by_bus=None, bus_net_mw=None,
+                         font_scale=1.0):
     """The **settlement** companion to :func:`rights_figure`: the same rights drawn
     over the *unified-clearing* network --- nodal LMPs at every bus and the
     dispatch flows on every line --- with each right's **FTR payoff** in the table.
@@ -503,8 +512,13 @@ def rights_payoff_figure(net, pt, rights, res, *, fp=None, coords=None,
         lmp_only=bus_net_mw is not None,
         line_flows={l: float(res.flow_own[l]) for l in pt.lines},
         line_colors=lcolors, line_widths=line_widths, constrained_lines=binding,
-        flow_labels=True, ax=axn, title=title or "Rights settled at the unified prices")
-    draw_rights_arcs(axn, rights, coords, tier_colors=tier_colors, label_mw=False)
+        flow_labels=True, ax=axn, title=title or "Rights settled at the unified prices",
+        node_number_fontsize=10 * font_scale, annot_fontsize=6 * font_scale,
+        flow_label_fontsize=9 * font_scale, title_fontsize=13 * font_scale,
+        net_label_offset=28.0 / font_scale,
+        title_pad=(None if font_scale == 1.0 else 6.0 + 45.0 * (font_scale - 1.0)))
+    draw_rights_arcs(axn, rights, coords, tier_colors=tier_colors, label_mw=False,
+                     label_fontsize=7.5 * font_scale)
 
     # right: the payoff table -- volume, price difference, total payoff.
     cells, pathcols, total = [], [], 0.0

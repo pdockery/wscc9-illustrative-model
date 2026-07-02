@@ -1462,6 +1462,8 @@ def plot_network_topology(
     flow_label_fontsize=9,
     flow_labels=True,
     parallel_gap=0.12,
+    net_label_offset=28.0,
+    title_pad=None,
 ):
     """
     Draw the network topology diagram with bus colors matching the circlize plot.
@@ -1677,7 +1679,7 @@ def plot_network_topology(
             # the text on the side facing the node so it reads outward.
             rdx, rdy = x - _cx, y - _cy
             rl = (rdx * rdx + rdy * rdy) ** 0.5 or 1.0
-            ox, oy = 28 * rdx / rl, 28 * rdy / rl
+            ox, oy = net_label_offset * rdx / rl, net_label_offset * rdy / rl
             _ha = 'left' if ox > 3 else ('right' if ox < -3 else 'center')
             _va = 'bottom' if oy > 3 else ('top' if oy < -3 else 'center')
             if bus_net_mw is not None and abs(bus_net_mw.get(bus, 0.0)) > 0.5:
@@ -1732,7 +1734,7 @@ def plot_network_topology(
                                   ec=bc, lw=1.4, alpha=0.9),
                         zorder=5)
 
-    ax.set_title(title, fontsize=title_fontsize, fontweight='bold')
+    ax.set_title(title, fontsize=title_fontsize, fontweight='bold', pad=title_pad)
     ax.set_aspect('equal')
     ax.margins(0.15)
     ax.axis('off')
@@ -1805,6 +1807,7 @@ def plot_combined_letter(
     center_bus=None,
     start=0,
     network_show_lmp=True,
+    panel_ratios=(1, 1),
 ):
     """Letter-size composite: network topology (left) + circlize/chord (right).
 
@@ -1828,15 +1831,18 @@ def plot_combined_letter(
         bus_colors = assign_bus_colors(all_buses, supply_by_bus, demand_by_bus)
 
     fig = plt.figure(figsize=figsize)
-    gs = fig.add_gridspec(1, 2, width_ratios=[1, 1], wspace=0.02,
-                          left=0.02, right=0.99, top=0.92, bottom=0.03)
+    _compact = figsize[0] < 10          # the taller 8.5-in-wide print layout
+    gs = fig.add_gridspec(1, 2, width_ratios=list(panel_ratios), wspace=0.02,
+                          left=0.02, right=0.99, top=(0.895 if _compact else 0.92),
+                          bottom=0.03)
     ax_net = fig.add_subplot(gs[0, 0])
     ax_circ = fig.add_subplot(gs[0, 1], projection='polar')
     # Pull the circlize axes in slightly so pycirclize's peripheral labels
     # (drawn out to r~103) don't clip against the page edge.
     box = ax_circ.get_position()
-    ax_circ.set_position([box.x0 + 0.01, box.y0 + 0.02,
-                          box.width * 0.90, box.height * 0.90])
+    ax_circ.set_position([box.x0 + 0.01, box.y0 + (0.01 if _compact else 0.02),
+                          box.width * (0.95 if _compact else 0.90),
+                          box.height * (0.96 if _compact else 0.90)])
 
     # Left: network topology -- numbers outside the bubble, colour-matched boxes.
     plot_network_topology(
@@ -1849,6 +1855,8 @@ def plot_combined_letter(
         node_number_fontsize=11, annot_fontsize=7.5, title_fontsize=11,
         ax=ax_net, title=title_left,
     )
+    if _compact:               # lift the panel title into the margin, clear of the top net-mw box
+        ax_net.set_title(title_left, fontsize=11, fontweight='bold', pad=20)
 
     # Right: circlize/chord drawn into the polar axes, compact labels at fs=10.
     plot_nodal_circlize(
@@ -1865,9 +1873,9 @@ def plot_combined_letter(
         show_legend=False, sector_order=sector_order,
         start=start, center_bus=center_bus,
     )
-    ax_circ.set_title(title_right, fontsize=11, fontweight='bold', pad=10)
+    ax_circ.set_title(title_right, fontsize=11, fontweight='bold', pad=(20 if _compact else 10))
 
     if suptitle:
-        fig.suptitle(suptitle, fontsize=14, fontweight='bold', y=0.985)
+        fig.suptitle(suptitle, fontsize=14, fontweight='bold', y=(0.99 if _compact else 0.985))
 
     return fig, (ax_net, ax_circ)
