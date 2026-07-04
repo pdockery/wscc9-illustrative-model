@@ -558,6 +558,7 @@ def plot_nodal_circlize(
     sector_order=None,
     start=0,
     center_bus=None,
+    dim_buses=None,
     track_fontsize=None,
     lmp_line=False,
     bus_groups=None,
@@ -702,7 +703,10 @@ def plot_nodal_circlize(
         bus_load_width[bus] = lw
         content = gw + lw + (gap if gw > 0 and lw > 0 else 0)
         if content < 1:
-            bus_sizes[bus] = transit_sector
+            # a dimmed out-of-area bus carries a "$XX/MWh" price label, so give it a
+            # touch more angular room than a bare transit bus so the labels don't collide
+            bus_sizes[bus] = (30 if (dim_buses is not None and bus in dim_buses)
+                              else transit_sector)
         else:
             bus_sizes[bus] = max(content, min_sector)
 
@@ -1046,7 +1050,14 @@ def plot_nodal_circlize(
         # circle bbox can't be drawn). Active buses keep "Bus N" + their LMP.
         bus_lmp = _lmps.get(bus, 0)
         is_transit = (gw <= 0) and (dem <= 0)
-        if is_transit:
+        _dimmed = dim_buses is not None and bus in dim_buses
+        if is_transit and _dimmed and bus_lmp > 0:
+            # A greyed bus OUTSIDE the modelled area: no gen/load here, but its LMP
+            # is defined (lambda + shift-factor congestion) -- surface just the price
+            # ($/MWh, no "Bus N" label), the out-of-area price the ring still prices.
+            sector.text(f"${bus_lmp:.1f}", r=104, fontsize=label_fontsize * 0.8,
+                        fontweight='bold', color=bc_dark)
+        elif is_transit:
             try:
                 sector.text(f"{bus}", r=103, fontsize=label_fontsize,
                             fontweight='bold', color=bc_dark,
@@ -1811,6 +1822,7 @@ def plot_combined_letter(
     sector_order=None,
     bus_coords=None,
     center_bus=None,
+    dim_buses=None,
     start=0,
     network_show_lmp=True,
     panel_ratios=(1, 1),
@@ -1868,6 +1880,7 @@ def plot_combined_letter(
     plot_nodal_circlize(
         supply_by_bus, demand_by_bus, all_buses,
         flows=flows, clearing_price=clearing_price, bus_lmps=bus_lmps,
+        dim_buses=dim_buses,
         bus_colors=bus_colors, gen_marginal_costs=gen_marginal_costs,
         lmp_line=lmp_line, bus_groups=bus_groups, group_colors=group_colors,
         group_label_fontsize=group_label_fontsize, show_group_labels=show_group_labels,

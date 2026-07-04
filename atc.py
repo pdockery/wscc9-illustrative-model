@@ -48,7 +48,7 @@ its own monitored lines, missing a neighbour's loop flow).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
@@ -296,11 +296,142 @@ def ba_atc(pt, fp, name: str, source, sink, etc: float = 0.0) -> tuple[float, st
 
 
 # ──────────────────────────────────────────────────────────────────────────
+# The CRR / FTR auction — award the simultaneously feasible set by bid value
+# ──────────────────────────────────────────────────────────────────────────
+@dataclass
+class Bid:
+    """A transmission customer's bid into the CRR/FTR auction.
+
+    A request for up to ``mw`` MW of a point-to-point right ``source -> sink`` at a
+    hedge-value ``premium`` ($/MW) — what the customer will pay for the congestion
+    hedge on that path. ``label`` names the customer for the ledger.
+    """
+
+    source: str
+    sink: str
+    mw: float
+    premium: float
+    label: str = ""
+    group: str = ""
+
+    def __post_init__(self):
+        self.source = str(self.source)
+        self.sink = str(self.sink)
+        self.mw = float(self.mw)
+        self.premium = float(self.premium)
+        self.group = str(self.group)
+
+
+@dataclass
+class CRRResult:
+    """Outcome of :func:`crr_auction`.
+
+    ``awards`` — per-bid table (source, sink, label, requested, premium, awarded MW,
+    ``charge`` = the flowgate price it pays ``Sum_l a_l mu_l`` $/MW, and ``status``).
+    ``mu`` — ``{line: signed shadow price}`` on the binding flowgates (the scarcity
+    prices; slack lines omitted). ``rent`` — auction revenue ``Sum_i x_i * charge_i``,
+    which equals the congestion rent ``Sum_l |mu_l F_l|`` of the awarded set. ``value``
+    — the objective ``Sum_i premium_i * x_i`` (total hedge value awarded).
+    """
+
+    awards: pd.DataFrame
+    mu: dict
+    rent: float
+    value: float
+
+
+def crr_auction(pt, bids, monitored="all", obligations=None, tol: float = 1e-7) -> CRRResult:
+    """Hogan's CRR/FTR auction: award point-to-point rights to maximise bid value
+    subject to the simultaneous-feasibility test.
+
+    Solves the linear program (Hogan 1992's *"maximizing the value of the selected
+    bids"* objective over the flowgate SFT ``H t <= b`` of the flowgate paper)::
+
+        max_x   Sum_i premium_i * x_i
+        s.t.   | Sum_i a_l(s_i, k_i) x_i | <= F_bar_l    for every monitored line l
+                Sum_{i in g} x_i <= cap_g                 for every obligation group g
+                0 <= x_i <= requested_i
+
+    where ``a_l`` is the :func:`path_shift_factors` of each bid and ``x_i`` its awarded
+    MW. The counterflow-crediting (netted) SFT is used — the financial-CRR / obligation
+    standard, the same test as :func:`simultaneous_feasibility`. The dual ``mu_l`` on a
+    binding line is its scarcity price; by complementary slackness a bid clears
+    (``x_i > 0``) only where its premium covers the flowgate charge it consumes,
+    ``premium_i >= Sum_l a_l(s_i, k_i) mu_l`` — the endogenous, price-based award that
+    replaces an administrative sort.
+
+    ``obligations`` (optional) ``{group: cap_mw}`` caps the TOTAL award across all bids
+    sharing that ``Bid.group`` — a transmission customer's single delivery obligation it
+    may source over several candidate paths (POR/POD combinations). With it the auction
+    *derives* the sourcing split (e.g. cheap path up to the flowgate limit, the rest via a
+    costlier one) instead of being handed it. Returns a :class:`CRRResult`.
+    """
+    from scipy.optimize import linprog
+
+    bids = [b if isinstance(b, Bid) else Bid(*b) for b in bids]
+    idx = _monitored_idx(pt, monitored)
+    n = len(bids)
+    # A[l, i] = path shift factor of bid i on monitored line l (the SFT coefficient).
+    A = np.zeros((len(idx), n))
+    for i, b in enumerate(bids):
+        A[:, i] = path_shift_factors(pt, b.source, b.sink)[idx]
+    fbar = np.array([float(pt.s_nom[l]) for l in idx])
+    # |A x| <= fbar  ->  two one-sided blocks (+A and -A); netting credits counterflow.
+    blocks = [A, -A]
+    rhs = [fbar, fbar]
+    # Obligation-group caps appended AFTER the line rows (so line-dual indexing is unchanged).
+    for g, cap in (obligations or {}).items():
+        blocks.append(np.array([[1.0 if b.group == g else 0.0 for b in bids]]))
+        rhs.append(np.array([float(cap)]))
+    A_ub = np.vstack(blocks)
+    b_ub = np.concatenate(rhs)
+    c = np.array([-b.premium for b in bids])                 # maximise value = minimise -value
+    bounds = [(0.0, b.mw) for b in bids]
+    res = linprog(c, A_ub=A_ub, b_ub=b_ub, bounds=bounds, method="highs")
+    if not res.success:
+        raise RuntimeError(f"CRR auction LP failed: {res.message}")
+
+    x = np.asarray(res.x)
+    # HiGHS marginals for (A_ub x <= b_ub) are <= 0; the scarcity price is their negative.
+    m = -np.asarray(res.ineqlin.marginals)
+    nl = len(idx)
+    mu_line = m[:nl] - m[nl:2 * nl]                          # signed dual per monitored line (line rows only)
+    charge = A.T @ mu_line                                   # flowgate charge Sum_l a_l mu_l per bid
+    mu = {pt.lines[l]: round(float(mu_line[j]), 4)
+          for j, l in enumerate(idx) if abs(mu_line[j]) > tol}
+
+    rows = []
+    for i, b in enumerate(bids):
+        xi = float(x[i])
+        status = ("full" if xi > b.mw - 1e-6 else "partial" if xi > 1e-6 else "none")
+        rows.append({"label": b.label, "from": b.source, "to": b.sink,
+                     "requested (MW)": round(b.mw, 1), "premium ($/MW)": round(b.premium, 2),
+                     "awarded (MW)": round(xi, 1), "charge ($/MW)": round(float(charge[i]), 2),
+                     "status": status})
+    awards = pd.DataFrame(rows)
+    return CRRResult(awards=awards, mu=mu,
+                     rent=round(float(x @ charge), 1), value=round(float(-res.fun), 1))
+
+
+def awarded_rights(result: CRRResult, tier_key="label", min_mw: float = 1e-6) -> list[dict]:
+    """The awarded set as a ``rights`` list (``{source, sink, mw, tier}``) for the
+    figure helpers (``rights_figure`` / ``draw_rights_arcs``), dropping zero awards.
+    """
+    out = []
+    for _, r in result.awards.iterrows():
+        if r["awarded (MW)"] > min_mw:
+            out.append({"source": r["from"], "sink": r["to"],
+                        "mw": float(r["awarded (MW)"]), "tier": r[tier_key]})
+    return out
+
+
+# ──────────────────────────────────────────────────────────────────────────
 # Smoke test — reproduces the three results the notebook is built on
 # ──────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import wscc9_model as wm
     import footprints as fpmod
+    from seams_engine import compute_ptdf
 
     pt = wm.shift_factors()
 
@@ -333,3 +464,13 @@ if __name__ == "__main__":
     ok3, df3 = simultaneous_feasibility(pt, combined)
     print(df3.loc[["line_3", "line_4"]].to_string())
     print(f"    network-wide SFT feasible? {ok3}  (expect False; line_4 ~121%)")
+
+    print("\n(5) CRR/FTR auction — award oversubscribed requests by hedge value:")
+    ptc = compute_ptdf(wm.build_network({"line_4": 40.0}), slack_bus="1")
+    r = crr_auction(ptc, [
+        Bid("1", "9", 125, 8.0, "C1 -> bus 9"),
+        Bid("1", "5", 90, 3.0, "C2 -> bus 5"),
+        Bid("3", "7", 100, 12.0, "C3 -> bus 7 (cheap)")])
+    print(r.awards.to_string(index=False))
+    print(f"    flowgate prices mu = {r.mu}")
+    print(f"    auction revenue = ${r.rent:,.0f}  (= congestion rent of the awarded set)")

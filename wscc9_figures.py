@@ -54,6 +54,7 @@ def footprint_figure(
     annotate_roles=True, axis_key=True,
     node_net_mw=None, network_show_lmp=None,
     bus_coords=None, ring_order=None, center_bus=None,
+    curves=None,
     title_left="Network -- DC power flow",
     title_right="Nodal dispatch -- merit order, demand & flows",
     figsize=(11, 6.2),
@@ -97,6 +98,11 @@ def footprint_figure(
         ``node_net_mw`` is given (then ``False``). The dispatch ring always keeps
         its LMP labels.
     """
+    if curves:                              # attach rising MC curves so the ring draws each
+        for _g in engine.gens:              # dispatched unit as a sloped WEDGE (a + b*g), not a
+            if _g in curves:                # flat rectangle -- matches the QP the dispatch cleared with
+                engine.gens[_g]["curve"] = curves[_g]
+
     if node_net_mw is True:
         bus_net = {b: float(res.injection[pt.bus_idx[b]]) for b in pt.buses}
     elif isinstance(node_net_mw, dict):
@@ -163,7 +169,7 @@ def footprint_figure(
 
     fig, (ax_net, ax_circ) = plot_combined_letter(
         net, sup, dem,
-        bus_colors=colors, bus_lmps=res.lmp,
+        bus_colors=colors, bus_lmps=res.lmp, dim_buses=dim,
         bus_net_mw=bus_net, network_show_lmp=network_show_lmp,
         line_flows={l: res.flow_own[l] for l in pt.lines},
         line_widths=susceptance_widths(pt), line_colors=lcolors,

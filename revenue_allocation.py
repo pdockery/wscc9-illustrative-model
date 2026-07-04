@@ -44,7 +44,7 @@ import numpy as np
 
 import atc
 import wscc9_model as wm
-from seams_engine import compute_ptdf, solve_engine_dispatch
+from seams_engine import compute_ptdf, solve_engine_dispatch, solve_engine_qp
 
 #: Display names for the transfer methodologies.
 T_NAMES = {1: "T1 -- fixed shares (TRANSFER_SPLIT)",
@@ -76,20 +76,38 @@ def ba_settlement(fp, res, loads):
     return out
 
 
-def settlement_by_bus(res, buses, loads):
-    """Bus-level settlement (LMP, gen, paid-to-gen, load, paid-by-load) + SUBTOTAL,
-    over the given buses — the one-engine accounting of the fundamentals notebook."""
-    t = pd.DataFrame(
-        [{"bus": b,
-          "LMP ($/MWh)": round(res.lmp[b], 2),
-          "gen (MW)": round(res.gen_by_bus.get(b, 0.0), 1),
-          "paid to gen ($/h)": round(res.lmp[b] * res.gen_by_bus.get(b, 0.0), 1),
-          "load (MW)": round(float(loads.get(b, 0.0)), 1),
-          "paid by load ($/h)": round(res.lmp[b] * float(loads.get(b, 0.0)), 1)}
-         for b in buses]
-    ).set_index("bus")
-    t.loc["SUBTOTAL"] = ["", t["gen (MW)"].sum(), t["paid to gen ($/h)"].sum(),
-                         t["load (MW)"].sum(), t["paid by load ($/h)"].sum()]
+def settlement_by_bus(res, buses, loads, all_buses=None):
+    """Bus-level settlement (LMP, gen, paid-to-gen, load, paid-by-load) + SUBTOTAL —
+    the one-engine accounting of the fundamentals notebook.
+
+    ``buses`` are the buses actually cleared/settled in this dispatch. Pass
+    ``all_buses`` to also list the buses OUTSIDE the dispatch (the greyed,
+    out-of-area buses of the per-BA autarky / accommodation views): the table then
+    gains an ``in settlement`` (True/False) column, and an out-of-area bus shows its
+    LMP but zero gen / load / payments (it carries no resources here). Without
+    ``all_buses`` the table is exactly the original five columns over ``buses``. The
+    SUBTOTAL sums only the in-settlement rows (the rest are zero)."""
+    settled = {str(b) for b in buses}
+    flag = all_buses is not None
+    disp = [str(b) for b in (all_buses if flag else buses)]
+    rows = []
+    for b in disp:
+        ins = b in settled
+        g = res.gen_by_bus.get(b, 0.0) if ins else 0.0
+        d = float(loads.get(b, 0.0)) if ins else 0.0
+        row = {"bus": b}
+        if flag:
+            row["in settlement"] = ins
+        row["LMP ($/MWh)"] = round(res.lmp[b], 2)
+        row["gen (MW)"] = round(g, 1)
+        row["paid to gen ($/h)"] = round(res.lmp[b] * g, 1)
+        row["load (MW)"] = round(d, 1)
+        row["paid by load ($/h)"] = round(res.lmp[b] * d, 1)
+        rows.append(row)
+    t = pd.DataFrame(rows).set_index("bus")
+    lead = ["", ""] if flag else [""]
+    t.loc["SUBTOTAL"] = lead + [t["gen (MW)"].sum(), t["paid to gen ($/h)"].sum(),
+                                t["load (MW)"].sum(), t["paid by load ($/h)"].sum()]
     return t
 
 
@@ -248,24 +266,59 @@ def cost_by_bus(gen_fleet=None):
     return {s["bus"]: s["cost"] for s in fleet.values()}
 
 
-def _agg(fp, result, area, loads=None, cost=None):
+def _prod_cost(result, bs, cost, curves=None, gen_bus=None):
+    """Production cost of the generators sitting in bus set ``bs``.
+
+    Default (``curves=None``) is the flat ``sum_b cost[b]*g_b`` — marginal cost
+    times output. With **rising linear MC curves** ``curves = {gen: (a, b)}``
+    (``MC_g(g) = a + b*g``) the cost is the **area under marginal cost**,
+    ``a*g + ½*b*g²``, summed per generator (``gen_bus = {gen: bus}`` maps each unit
+    to its bus; defaults to the canonical fleet). A generator absent from ``curves``
+    falls back to its flat ``cost[bus]*g``. Producer surplus is then
+    ``LMP*g − (a*g + ½*b*g²)`` — positive for an inframarginal unit, zero only when
+    the curve is flat and the unit sets its own price."""
+    if not curves:
+        return sum(cost.get(b, 0.0) * result.gen_by_bus.get(b, 0.0) for b in bs)
+    if gen_bus is None:
+        gen_bus = {g: s["bus"] for g, s in wm.DEFAULT_GEN_FLEET.items()}
+    bset = {str(x) for x in bs}
+    pc = 0.0
+    for g, gmw in result.dispatch.items():
+        b = str(gen_bus[g])
+        if b not in bset:
+            continue
+        if g in curves:
+            a, bb = curves[g]
+            pc += a * gmw + 0.5 * bb * gmw * gmw
+        else:
+            pc += cost.get(b, 0.0) * gmw
+    return pc
+
+
+def _agg(fp, result, area, loads=None, cost=None, curves=None, gen_bus=None):
     """(served-load payment, generator revenue, production cost) for an AREA at
-    `result` prices — shed load pays nothing."""
+    `result` prices — shed load pays nothing. Pass ``curves`` (``{gen:(a,b)}``,
+    ``MC=a+b*g``) so the production cost — and hence producer surplus ``R − PC`` — is
+    the area under marginal cost rather than the flat ``cost*g`` (which is degenerate,
+    zero surplus, when each unit sets its own price)."""
     loads = wm.DEFAULT_LOADS if loads is None else loads
     cost = cost_by_bus() if cost is None else cost
     bs = fp.areas[area]
     L = sum(result.lmp[b] * (loads.get(b, 0.0) - result.shed_by_bus.get(b, 0.0)) for b in bs)
     R = sum(result.lmp[b] * result.gen_by_bus.get(b, 0.0) for b in bs)
-    PC = sum(cost.get(b, 0.0) * result.gen_by_bus.get(b, 0.0) for b in bs)
+    PC = _prod_cost(result, bs, cost, curves, gen_bus)
     return L, R, PC
 
 
-def independent_clear(fp, rat, gen_fleet=None, loads=None, shed_price=None, split_5_6=False):
+def independent_clear(fp, rat, gen_fleet=None, loads=None, shed_price=None, split_5_6=False,
+                      curves=None):
     """Each AREA as its own independent engine on the full network — own gens
     serve own load, enforcing ONLY the lines assigned to it (rest relaxed), no
     interchange. A nodal DC-OPF per area; infeasibility is returned as ``None``
     (a finding) unless ``shed_price`` is given (then the area sheds at the
-    penalty). Returns ``(pt, {area: EngineResult|None})``."""
+    penalty). Pass ``curves`` (``{gen:(a,b)}``) to clear against **rising linear
+    MC curves** (``solve_engine_qp``) instead of flat offers. Returns
+    ``(pt, {area: EngineResult|None})``."""
     n = wm.build_network(rat, split_5_6=split_5_6)
     pt = compute_ptdf(n, slack_bus="1")
     out = {}
@@ -273,21 +326,26 @@ def independent_clear(fp, rat, gen_fleet=None, loads=None, shed_price=None, spli
         act = [l for l in pt.lines if fp.line_assign.get(l) == area]
         try:
             eng = wm.make_engine(area, buses, gen_fleet=gen_fleet, loads=loads, activated=act)
-            out[area] = solve_engine_dispatch(pt, eng, shed_price=shed_price)
+            out[area] = (solve_engine_qp(pt, eng, curves=curves, shed_price=shed_price)
+                         if curves else solve_engine_dispatch(pt, eng, shed_price=shed_price))
         except (RuntimeError, ValueError):
             out[area] = None
     return pt, out
 
 
-def autarky_vs_unified(fp, method, alloc, indep, resU, loads=None, cost=None):
+def autarky_vs_unified(fp, method, alloc, indep, resU, loads=None, cost=None,
+                       curves=None, gen_bus=None):
     """Homework-style autarky (independent) vs unified ledger for one allocation
     method. `alloc` is the congestion allocation table, `indep` the per-area
     autarky results, `resU` the unified clearing. Cash out negative; the TOTAL
-    column's positions sum to −(production cost)."""
+    column's positions sum to −(production cost). Pass ``curves`` (``{gen:(a,b)}``)
+    so generator producer surplus is the LMP payment minus the area under marginal
+    cost (non-degenerate) rather than the flat ``Σ(λ−c)·g`` (≈ 0 when each unit sets
+    its own price)."""
     data = {}
     for ba in fp.areas:
-        La, Ra, PCa = _agg(fp, indep[ba], ba, loads, cost)
-        Lu, Ru, PCu = _agg(fp, resU, ba, loads, cost)
+        La, Ra, PCa = _agg(fp, indep[ba], ba, loads, cost, curves, gen_bus)
+        Lu, Ru, PCu = _agg(fp, resU, ba, loads, cost, curves, gen_bus)
         col = "method1" if method == 1 else "method2"
         A = float(alloc.loc[ba, col]) if ba in alloc.index else 0.0
         Ra_int = La - Ra
@@ -365,15 +423,17 @@ def _fold_congestion(base, fp, resU, pt, loads):
 
 
 def autarky_vs_unified_congestion(fp, method, alloc, indep, resU, pt, *,
-                                  loads=None, cost=None):
+                                  loads=None, cost=None, curves=None, gen_bus=None):
     """``autarky_vs_unified`` (the ``N_a = L_a - G_a`` net-position ledger) with the
     congestion-revenue derivation folded into the Unified block by :func:`_fold_congestion`
     -- the system rent R, its split into ``N_a^c`` by region, and the allocation, above each
     region's consumer/generator Pareto positions. ``method`` / ``alloc`` / ``indep`` / ``resU``
-    are as in ``autarky_vs_unified``; ``pt`` is the PTDF used for ``N_a^c``."""
+    are as in ``autarky_vs_unified``; ``pt`` is the PTDF used for ``N_a^c``. Pass ``curves``
+    (``{gen:(a,b)}``) to make generator producer surplus the area-under-MC form."""
     loads = wm.DEFAULT_LOADS if loads is None else loads
-    return _fold_congestion(autarky_vs_unified(fp, method, alloc, indep, resU, loads, cost),
-                            fp, resU, pt, loads)
+    return _fold_congestion(
+        autarky_vs_unified(fp, method, alloc, indep, resU, loads, cost, curves, gen_bus),
+        fp, resU, pt, loads)
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -511,24 +571,28 @@ def allocate_transfer_rent(fp, res, loads, t_method, transfer_split):
 
 
 def solve_with_transfer(fp, ratings, ebar, gen_fleet=None, loads=None,
-                        shed_price=None, split_5_6=False):
+                        shed_price=None, split_5_6=False, curves=None):
     """Unified clearing with the net-interchange constraint |E| ≤ ebar on the
-    FIRST footprint's bus set, plus the optional load-shed relaxation. Returns
-    ``(n, pt, engine, res)``."""
+    FIRST footprint's bus set, plus the optional load-shed relaxation. Pass
+    ``curves`` (``{gen:(a,b)}``) to clear against **rising linear MC curves**
+    (``solve_engine_qp``) instead of flat offers. Returns ``(n, pt, engine, res)``."""
     n = wm.build_network(ratings, split_5_6=split_5_6)
     p = compute_ptdf(n, slack_bus="1")
     e = wm.make_engine("UNIFIED", buses=p.buses, gen_fleet=gen_fleet, loads=loads)
-    r = solve_engine_dispatch(p, e, interchange=(fp.defs[fp.names[0]], ebar),
-                              shed_price=shed_price)
+    ic = (fp.defs[fp.names[0]], ebar)
+    r = (solve_engine_qp(p, e, curves=curves, interchange=ic, shed_price=shed_price)
+         if curves else solve_engine_dispatch(p, e, interchange=ic, shed_price=shed_price))
     return n, p, e, r
 
 
-def transfer_ledger(fp, res, p, loads, method, t_method, indep, transfer_split, cost=None):
+def transfer_ledger(fp, res, p, loads, method, t_method, indep, transfer_split, cost=None,
+                    curves=None, gen_bus=None):
     """Autarky vs the transfer-constrained clearing — the per-area
     Consumer/Generator layout with both revenue streams shown COLLECTED
     separately from ALLOCATED (congestion by Method `method`; transfer by
     `t_method`). `indep` = autarky results on the SAME ratings. TOTAL positions
-    sum to −(production cost)."""
+    sum to −(production cost). Pass ``curves`` (``{gen:(a,b)}``) so generator
+    producer surplus is the LMP payment minus the area under marginal cost."""
     alloc, summ, lr, sep = allocate_congestion_rent(fp, res, p, loads)
     col = "method1" if method == 1 else "method2"
     RT = transfer_rent(res)
@@ -537,8 +601,8 @@ def transfer_ledger(fp, res, p, loads, method, t_method, indep, transfer_split, 
     for ba in fp.areas:
         assert indep[ba] is not None, (f"{ba} has no autarky baseline -- pass "
                                        "shed_price=SHED_PRICE to independent_clear")
-        La, Ra, PCa = _agg(fp, indep[ba], ba, loads, cost)
-        Lc, Rc, PCc = _agg(fp, res, ba, loads, cost)
+        La, Ra, PCa = _agg(fp, indep[ba], ba, loads, cost, curves, gen_bus)
+        Lc, Rc, PCc = _agg(fp, res, ba, loads, cost, curves, gen_bus)
         own_aut = La - Ra
         A = float(alloc.loc[ba, col]) if ba in alloc.index else 0.0
         AT = AT_map.get(ba, 0.0)
