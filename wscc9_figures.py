@@ -20,8 +20,8 @@ the standard shared legend.
 * :func:`composite_figure` — the unified two-panel view (nothing greyed), the
   figure each downstream notebook prints in its set-up cell.
 * :func:`draw_net_dispatch` / :func:`transfer_figure` — the "Transfers" inset
-  (each footprint as one bubble, the interchange as a flow/limit label) and the
-  composite carrying it.
+  (each footprint as one bubble, the scheduled transfer as a flow/limit label)
+  and the composite carrying it.
 """
 
 from __future__ import annotations
@@ -49,7 +49,7 @@ _SELFSCHED = "#95A5A6"   # self-schedule: a price-taking block the dispatch did 
 
 def footprint_figure(
     net, pt, fp, engine, res, *,
-    highlight=None, dim_buses=None, exo_sched=None, sup_dem=None,
+    highlight=None, dim_buses=None, exo_sched=None, exo_annotate=True, sup_dem=None,
     bus_colors=None, demand_segments=None, shed=True, legend_note=None, suptitle=None,
     annotate_roles=True, axis_key=True,
     node_net_mw=None, network_show_lmp=None,
@@ -115,6 +115,8 @@ def footprint_figure(
     has_selfsched = False
     if sup_dem is not None:
         sup, dem = sup_dem
+        has_selfsched = any(u.get("unit_id") == "self_schedule" or u.get("color") == _SELFSCHED
+                            for _blocks in sup.values() for u in _blocks)
     else:
         sup, dem = to_supply_demand(engine, res)
         for b, mw in (exo_sched or {}).items():
@@ -133,7 +135,7 @@ def footprint_figure(
 
     if demand_segments is None and shed and sup_dem is None:
         demand_segments = shed_segments(res, dem) or None
-    has_shed = demand_segments is not None
+    has_shed = any(v > 1e-6 for v in (getattr(res, "shed_by_bus", None) or {}).values())
 
     # flow tracing: on served demand when tracking shed, else on the drawn demand
     if sup_dem is None and shed:
@@ -189,12 +191,23 @@ def footprint_figure(
     )
 
     _coords = bus_coords if bus_coords is not None else COORDS
-    for b, mw in (exo_sched or {}).items():
-        kind = "self-schedule import" if mw >= 0 else "self-schedule export"
-        ax_net.annotate(f"{kind} {abs(mw):.0f} MW", _coords[str(b)], fontsize=8,
-                        fontweight="bold", color="#B03A2E", xytext=(0, 26),
-                        textcoords="offset points", ha="center",
-                        bbox=dict(boxstyle="round", fc="#FDEDEC", ec="#B03A2E"))
+    _exo = (exo_sched or {}) if exo_annotate else {}   # exo_annotate=False keeps the ring wedge, drops the network label
+    # A balanced source/sink pair (two entries) would stack two labels above adjacent
+    # buses; separate them horizontally and shorten the text. A single entry keeps the
+    # centered-above placement (unchanged for the fundamentals notebook's lone import).
+    _pair = len(_exo) == 2
+    _cx = (sum(_coords[str(b)][0] for b in _exo) / 2.0) if _pair else None
+    for b, mw in _exo.items():
+        if _pair:
+            _dx = 1 if _coords[str(b)][0] >= _cx else -1
+            _xt, _ha = (34 * _dx, 18), ("left" if _dx > 0 else "right")
+            _txt = f"self-sched {'+' if mw >= 0 else '−'}{abs(mw):.0f} MW"
+        else:
+            _xt, _ha = (0, 26), "center"
+            _txt = f"{'self-schedule import' if mw >= 0 else 'self-schedule export'} {abs(mw):.0f} MW"
+        ax_net.annotate(_txt, _coords[str(b)], fontsize=8, fontweight="bold",
+                        color="#B03A2E", xytext=_xt, textcoords="offset points",
+                        ha=_ha, bbox=dict(boxstyle="round", fc="#FDEDEC", ec="#B03A2E"))
 
     handles = [mpatches.Patch(fc=fp.colors[name], ec="#555", label=f"{name} lines / band")
                for name in fp.names]
@@ -277,9 +290,11 @@ def transfer_inset(ax, labels, tam, surplus, E, ebar, muT, colors, tie_cap, titl
 
 
 def draw_net_dispatch(ax, fp, res, ebar, engine, tie_cap):
-    """The "Transfers" inset for a footprint pair cleared with an ``interchange``
-    constraint — computes the bubble sizes / surpluses / E / μ_T from ``fp`` and
-    ``res`` and defers the drawing to :func:`transfer_inset`."""
+    """The "Transfers" inset for a footprint pair — reads the scheduled transfer
+    and its interface dual off an EDAM-literal result (``res.transfers`` /
+    ``res.transfer_duals``, signed as the first footprint's net export; zero for
+    a clearing with no declared interface), computes the bubble sizes and
+    surpluses from ``fp``, and defers the drawing to :func:`transfer_inset`."""
     names = fp.names
     sup, dem = to_supply_demand(engine, res)
     tam, surplus = {}, {}
@@ -290,9 +305,13 @@ def draw_net_dispatch(ax, fp, res, ebar, engine, tie_cap):
         surplus[name] = (sum(res.gen_by_bus.get(b, 0.0) for b in bs)
                          - sum(res.load_by_bus.get(b, 0.0) - res.shed_by_bus.get(b, 0.0)
                                for b in bs))
-    transfer_inset(ax, (names[0], names[1]), tam, surplus,
-                   float(res.interchange_mw or 0.0), ebar,
-                   abs(res.interchange_dual or 0.0), fp.colors, tie_cap)
+    k = tuple(sorted(names[:2]))
+    t = float((res.transfers or {}).get(k, 0.0)) if getattr(res, "transfers", None) else 0.0
+    e = t if names[0] == k[0] else -t
+    mu = (abs((res.transfer_duals or {}).get(k, 0.0))
+          if getattr(res, "transfer_duals", None) else 0.0)
+    transfer_inset(ax, (names[0], names[1]), tam, surplus, e, ebar, mu,
+                   fp.colors, tie_cap)
 
 
 #: Default rectangle (figure fraction) for the Transfers inset in the network panel.
@@ -306,6 +325,63 @@ def transfer_figure(net, pt, fp, engine, res, ebar, tie_cap, suptitle=None, **kw
     fig = footprint_figure(net, pt, fp, engine, res, suptitle=suptitle, **kw)
     draw_net_dispatch(fig.add_axes(INSET_RECT), fp, res, ebar, engine, tie_cap)
     return fig
+
+
+def self_schedule_bars(engine, res, source=None, sink=None, mw=0.0, *,
+                       sup_dem=None, source_price=None, sink_price=None,
+                       sink_rest_price=None, served_by_source=False,
+                       add_sink_demand=True, color=_SELFSCHED):
+    """Build ``(sup_dem, demand_segments)`` that draw a price-taking self-schedule as a
+    distinct grey block — the single, shared convention across the series (101's one-sided
+    injection, 201's balanced gen→load, 202's cross-market trade), cleaner than the
+    automatic ``exo_sched`` wedge. Pass the returned ``sup_dem`` / ``demand_segments``
+    straight to :func:`footprint_figure` / :func:`transfer_figure` (they take over the
+    bars, so drop ``exo_sched`` on the ring; the network panel's net-MW labels come from
+    ``res.injection`` and already include the schedule).
+
+    The scheduled ``mw`` is drawn as a fixed block at the BOTTOM of the ``source`` bus's
+    supply stack (priced at ``source_price``, default $\\lambda_{source}$) and/or as the
+    first slice of the ``sink`` bus's demand bar (priced at ``sink_price``, default
+    $\\lambda_{sink}$; the remainder at ``sink_rest_price``, default the same). Give only
+    ``source`` for a one-sided injection (the 101 case → a single clean wedge), or both for
+    a balanced schedule. ``source``/``sink`` default to ``None`` (that leg is skipped).
+
+    Options for the cross-market case:
+    ``served_by_source=True`` first backs the source unit's priced stack down by ``mw``
+    (the source *generator* is dispatched to serve the schedule); the default adds the
+    block on top (a fixed exogenous injection separate from the cleared generation).
+    ``add_sink_demand=False`` treats the schedule as part of the sink's EXISTING load
+    (splits the bar without growing it) rather than adding ``mw`` on top. Pass an existing
+    ``sup_dem`` to modify it in place (e.g. bars already carrying a seam interchange)
+    instead of rebuilding from ``engine``/``res``. ``source_price``/``sink_price`` let each
+    leg settle at another market's LMP (the four-leg cross-valuation).
+    """
+    S = float(mw)
+    sup, dem = (sup_dem if sup_dem is not None else to_supply_demand(engine, res))
+    segs = None
+    if source is not None and S > 1e-9:
+        src = str(source)
+        sp = res.lmp[src] if source_price is None else float(source_price)
+        if served_by_source:                          # back the source unit down by S first
+            taken = 0.0
+            for u in sup.get(src, []):
+                take = min(S - taken, u.get("accepted_volume", u["volume"]))
+                u["accepted_volume"] = u.get("accepted_volume", u["volume"]) - take
+                u["volume"] = u["capacity"] = u["capacity"] - take
+                taken += take
+            sup[src] = [u for u in sup.get(src, []) if u["volume"] > 1e-9]
+        sup.setdefault(src, []).insert(0, {"unit_id": "self_schedule", "price": sp,
+            "volume": S, "capacity": S, "accepted_volume": S, "color": color})
+    if sink is not None and S > 1e-9:
+        snk = str(sink)
+        kp = res.lmp[snk] if sink_price is None else float(sink_price)
+        rp = kp if sink_rest_price is None else float(sink_rest_price)
+        if add_sink_demand:
+            dem[snk] = dem.get(snk, 0.0) + S
+        total = dem.get(snk, 0.0)
+        segs = {snk: [{"mw": min(S, total), "price": kp, "color": color}]
+                     + ([{"mw": total - S, "price": rp}] if total - S > 0.01 else [])}
+    return (sup, dem), segs
 
 
 def draw_rights_arcs(ax, rights, coords=None, *, tier_colors=None, rad=0.22,

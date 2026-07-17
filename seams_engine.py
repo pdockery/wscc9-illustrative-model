@@ -194,11 +194,13 @@ class EngineResult:
     flow_own: dict[str, float]              # F^M_m  (own injections only)
     total_cost: float
     status: str
-    interchange_mw: float | None = None     # E (net export of the interchange bus set)
-    interchange_dual: float | None = None   # μ_T (signed, nonzero if the limit binds)
-    interchange_limit: float | None = None  # Ē (the scheduling limit enforced)
     shed_by_bus: dict[str, float] = field(default_factory=dict)  # u_n (unserved load; empty unless shed_price set)
     demand_cleared: dict[str, float] = field(default_factory=dict)  # price-sensitive demand bids: bid_id -> MW served
+    # EDAM-literal transfer form (solve_engine_transfers only; None otherwise)
+    area_prices: dict | None = None          # λ̂_a — each area's balance dual
+    transfers: dict | None = None            # {(a,b) sorted: net SCHEDULED t a→b, min-total-schedule tags}
+    transfer_duals: dict | None = None       # {(a,b) sorted: signed μ_T^{ab} (λ̂_b − λ̂_a when the limit binds)}
+    transfer_limits: dict | None = None      # {(a,b) sorted: released capacity T̄_ab (None = unlimited)}
 
 
 def solve_engine_dispatch(
@@ -206,7 +208,6 @@ def solve_engine_dispatch(
     engine: MarketEngine,
     exo: dict[str, float] | None = None,
     flow_offsets: dict[str, float] | None = None,
-    interchange: tuple | None = None,
     shed_price: float | None = None,
     demand_bids: list[dict] | None = None,
 ) -> EngineResult:
@@ -229,16 +230,6 @@ def solve_engine_dispatch(
         engine leaves room for another party's anticipated flow. The offset is
         exogenous to the optimisation (an ATC-style reservation), not a
         decision variable. Default ``None`` leaves the limits unchanged.
-    interchange : (buses, limit), optional
-        A net-interchange scheduling limit (an EDAM-style transfer constraint):
-        ``buses`` is one footprint's bus set, and the engine's net export out
-        of it, ``E = Σ_{i: bus(i)∈buses} g_i + Σ_{n∈buses} (exo_n − d_n)``
-        (lossless DC: identical to the summed tie flow across the cutset), is
-        held within ``±limit``. The signed dual is returned as
-        ``interchange_dual``, ``E`` as ``interchange_mw``, and every bus inside
-        ``buses`` carries the same ``+μ_T`` term in ``lmp`` — the per-footprint
-        energy-price separation a transfer constraint creates. Default ``None``
-        adds nothing.
     shed_price : float, optional
         Power-balance relaxation penalty, $/MWh (load shedding). When set, an
         unserved-load variable ``0 ≤ u_n ≤ d_n`` is added at every load bus and
@@ -355,36 +346,6 @@ def solve_engine_dispatch(
         A_ub.append(-row_sf)                           # −(flow+off) ≤ F̄ + Ffix
         b_ub.append(pt.s_nom[l] + Ffix[l] + off)
 
-    # ── Net-interchange / transfer-path constraint:  −Ē ≤ E ≤ Ē ─────────
-    # ``interchange[0]`` is either a footprint BUS set (E = its net export; the
-    # weight on each member bus is 1) or a transport-layer PATH given as the line
-    # cutset it crosses — a list of line names, or a ``{line: ±1 orientation}``
-    # dict — for which E = Σ_{m∈cutset} s_m F_m and the per-bus weight is the cutset
-    # shift factor w_n = Σ_m s_m SF_{n,m}. Both reduce to one linear constraint on
-    # the injections, Σ_n w_n p_n; a footprint's own boundary cutset reproduces its
-    # net export exactly. The line limits stay enforced underneath either way.
-    w_vec = a_ix = e_fix = None
-    if interchange is not None:
-        spec, ix_limit = interchange[0], float(interchange[1])
-        w_vec = np.zeros(pt.n_bus)
-        spec_keys = list(spec)
-        if spec_keys and all(str(x) in pt.line_idx for x in spec_keys):
-            orient = spec if isinstance(spec, dict) else {l: 1.0 for l in spec_keys}
-            for line, s_m in orient.items():
-                w_vec += float(s_m) * pt.ptdf[pt.line_idx[str(line)]]
-        else:
-            for b in spec_keys:
-                w_vec[pt.bus_idx[str(b)]] = 1.0
-        a_ix = np.array([w_vec[pt.bus_idx[gb]] for gb in gen_bus])
-        a_ixu = np.array([w_vec[pt.bus_idx[b]] for b in shed_bus])
-        a_ixd = np.array([-w_vec[pt.bus_idx[b]] for b in dem_bus])
-        a_row = np.concatenate([a_ix, a_ixu, a_ixd])    # shed raises net export; a demand bid lowers it
-        e_fix = float(w_vec @ (exo_vec - load_vec))
-        A_ub.append(a_row)                             # +E ≤ Ē  (E = a·g + a_u·u + e_fix)
-        b_ub.append(ix_limit - e_fix)
-        A_ub.append(-a_row)                            # −E ≤ Ē
-        b_ub.append(ix_limit + e_fix)
-
     A_ub = np.array(A_ub) if A_ub else None
     b_ub = np.array(b_ub) if b_ub else None
 
@@ -421,17 +382,6 @@ def solve_engine_dispatch(
         line_dual[pt.lines[l]] = mu
         cong += pt.ptdf[l] * mu
 
-    # Interchange / transfer-path dual: shifts every bus by its weight × μ_T.
-    interchange_mw = interchange_dual = interchange_limit = None
-    if interchange is not None:
-        ix_row = 2 * len(act)
-        mu_t = float(m[ix_row] - m[ix_row + 1])
-        cong += w_vec * mu_t
-        interchange_mw = float(a_ix @ g_opt + (a_ixu @ u_opt if K else 0.0)
-                               + (a_ixd @ d_opt if D else 0.0) + e_fix)
-        interchange_dual = mu_t
-        interchange_limit = ix_limit
-
     lmp = {pt.buses[n]: energy_price + cong[n] for n in range(pt.n_bus)}
 
     # ── Engine's own flow component F^M_m (eq. 6) ────────────────────────
@@ -463,9 +413,6 @@ def solve_engine_dispatch(
         flow_own=flow_own,
         total_cost=float(cost @ g_opt),
         status=res.message,
-        interchange_mw=interchange_mw,
-        interchange_dual=interchange_dual,
-        interchange_limit=interchange_limit,
         shed_by_bus={b: float(u) for b, u in zip(shed_bus, u_opt) if u > 1e-9},
         demand_cleared={i: float(q) for i, q in zip(dem_ids, d_opt) if q > 1e-9},
     )
@@ -476,7 +423,6 @@ def solve_engine_qp(
     engine: MarketEngine,
     curves: dict[str, tuple] | None = None,
     exo: dict[str, float] | None = None,
-    interchange: tuple | None = None,
     shed_price: float | None = None,
     binding_lines: list[str] | None = None,
     tol: float = 1e-3,
@@ -490,18 +436,18 @@ def solve_engine_qp(
     absent from ``curves`` keeps its flat engine cost (``b = 0``, ``a = cost``).
 
     Everything else — the shared PTDF, the activated line limits, the ``exo``
-    schedule, the interchange constraint, the load-shed relaxation, and the LMP
-    decomposition ``λ_n = λ + Σ_m SF_{n,m} μ_m + 𝟙{n∈set}·μ_T`` — is identical to
-    ``solve_engine_dispatch`` and the returned ``EngineResult`` carries the same
-    fields and sign conventions, so every downstream figure/ledger reads it
-    unchanged. With ``b = 0`` for all units it reproduces the flat LP exactly.
+    schedule, the load-shed relaxation, and the LMP decomposition
+    ``λ_n = λ + Σ_m SF_{n,m} μ_m`` — is identical to ``solve_engine_dispatch``
+    and the returned ``EngineResult`` carries the same fields and sign
+    conventions, so every downstream figure/ledger reads it unchanged. With
+    ``b = 0`` for all units it reproduces the flat LP exactly.
 
     Because there is no QP backend in the environment, the strictly-convex primal
     is solved with ``scipy.optimize.minimize(method="trust-constr")`` and the duals
     are recovered analytically from KKT stationarity at the *interior* generators:
     for any unit with ``0 < g_g < p_nom`` and bound multipliers zero,
-    ``MC_g(g_g) = λ + Σ_m SF_{bus(g),m} μ_m + w_{bus(g)} μ_T``. With one balance
-    dual, the binding-line duals, and (if it binds) the interchange dual as
+    ``MC_g(g_g) = λ + Σ_m SF_{bus(g),m} μ_m``. With one balance
+    dual and the binding-line duals as
     unknowns, the interior-gen equations pin them by least squares. Pass
     ``binding_lines`` (e.g. the active set from a companion flat solve) to fix the
     dual-carrying line set when the unconstrained dispatch is degenerate.
@@ -565,25 +511,6 @@ def solve_engine_qp(
             ub.append(pt.s_nom[l] - Ffix[l])
         cons.append(LinearConstraint(np.array(rows), np.array(lb), np.array(ub)))
 
-    w_vec = a_row_full = e_fix = None
-    if interchange is not None:
-        spec, ix_limit = interchange[0], float(interchange[1])
-        w_vec = np.zeros(pt.n_bus)
-        spec_keys = list(spec)
-        if spec_keys and all(str(x) in pt.line_idx for x in spec_keys):
-            orient = spec if isinstance(spec, dict) else {l: 1.0 for l in spec_keys}
-            for line, s_m in orient.items():
-                w_vec += float(s_m) * pt.ptdf[pt.line_idx[str(line)]]
-        else:
-            for bb in spec_keys:
-                w_vec[pt.bus_idx[str(bb)]] = 1.0
-        a_ix = np.array([w_vec[pt.bus_idx[gb]] for gb in gen_bus])
-        a_ixu = np.array([w_vec[pt.bus_idx[bb]] for bb in shed_bus]) if K else np.zeros(0)
-        a_row_full = np.concatenate([a_ix, a_ixu])
-        e_fix = float(w_vec @ (exo_vec - load_vec))
-        cons.append(LinearConstraint(a_row_full.reshape(1, -1),
-                                     -ix_limit - e_fix, ix_limit - e_fix))
-
     bounds = Bounds(np.zeros(N), np.concatenate([cap, shed_cap]))
     x0 = np.minimum(bounds.ub, np.maximum(bounds.lb, np.full(N, (total_load - total_exo) / max(N, 1))))
     res = minimize(lambda x: 0.5 * x @ (H @ x) + c_lin @ x, x0, method="trust-constr",
@@ -602,29 +529,38 @@ def solve_engine_qp(
         binding = [l for r, l in enumerate(act)
                    if abs((gen_sf[r] @ g_opt + (shed_sf[r] @ u_opt if K else 0.0)) + Ffix[l])
                    > pt.s_nom[l] - 1e-4]
-    ix_binds = False
-    if interchange is not None:
-        E = float(a_row_full @ x + e_fix)
-        ix_binds = abs(abs(E) - interchange[1]) < 1e-4
     A, rhs = [], []
     for i in interior:
         rowc = [1.0] + [pt.ptdf[l, pt.bus_idx[gen_bus[i]]] for l in binding]
-        if ix_binds:
-            rowc.append(w_vec[pt.bus_idx[gen_bus[i]]])
         A.append(rowc)
         rhs.append(a[i] + b[i] * g_opt[i])
-    sol, *_ = np.linalg.lstsq(np.array(A), np.array(rhs), rcond=None)
-    lam = float(sol[0])
-    mu = {l: float(sol[1 + k]) for k, l in enumerate(binding)}
-    mu_T = float(sol[1 + len(binding)]) if ix_binds else 0.0
+    for j in range(K):
+        # An interior shed variable is marginal exactly like an interior generator:
+        # its flat cost is the shed price, so stationarity pins its bus at V
+        # (the flat LP's behaviour). Without these rows an interval whose only
+        # marginal variable is shed leaves the KKT system empty.
+        if tol < u_opt[j] < shed_cap[j] - tol:
+            rowc = [1.0] + [pt.ptdf[l, pt.bus_idx[shed_bus[j]]] for l in binding]
+            A.append(rowc)
+            rhs.append(float(shed_price))
+    if A:
+        sol, *_ = np.linalg.lstsq(np.array(A), np.array(rhs), rcond=None)
+        lam = float(sol[0])
+        mu = {l: float(sol[1 + k]) for k, l in enumerate(binding)}
+    else:
+        # Fully degenerate vertex: every generator and shed variable sits at a
+        # bound, so stationarity determines no dual. Support the dispatch with a
+        # flat price at the dearest dispatched unit's marginal cost and carry no
+        # line duals (no price separation, no rent) rather than crash.
+        on = [i for i in range(G) if g_opt[i] > tol]
+        lam = float(max(a[i] + b[i] * g_opt[i] for i in on)) if on else float(np.min(a))
+        mu = {l: 0.0 for l in binding}
 
     line_dual = {pt.lines[l]: 0.0 for l in range(pt.n_line)}
     cong = np.zeros(pt.n_bus)
     for l in binding:
         line_dual[pt.lines[l]] = mu[l]
         cong += pt.ptdf[l] * mu[l]
-    if ix_binds:
-        cong += w_vec * mu_T
     lmp = {pt.buses[n]: lam + cong[n] for n in range(pt.n_bus)}
 
     gen_by_bus: dict[str, float] = {}
@@ -639,12 +575,6 @@ def solve_engine_qp(
     inj += exo_vec - load_vec + shed_vec
     flow_own = {pt.lines[l]: float(pt.ptdf[l] @ inj) for l in range(pt.n_line)}
 
-    interchange_mw = interchange_dual = interchange_limit = None
-    if interchange is not None:
-        interchange_mw = float(a_row_full @ x + e_fix)
-        interchange_dual = mu_T
-        interchange_limit = interchange[1]
-
     return EngineResult(
         name=engine.name,
         dispatch={gid: float(g_opt[i]) for i, gid in enumerate(gen_ids)},
@@ -658,10 +588,316 @@ def solve_engine_qp(
         flow_own=flow_own,
         total_cost=float(np.sum(a * g_opt + 0.5 * b * g_opt ** 2)),
         status=res.message,
-        interchange_mw=interchange_mw,
-        interchange_dual=interchange_dual,
-        interchange_limit=interchange_limit,
         shed_by_bus={bb: float(uu) for bb, uu in zip(shed_bus, u_opt) if uu > 1e-9},
+    )
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# EDAM-literal clearing: per-area balances + scheduled transfer variables
+# ──────────────────────────────────────────────────────────────────────────
+def solve_engine_transfers(
+    pt: PTDFData,
+    engine: MarketEngine,
+    areas: dict,
+    interfaces: dict,
+    curves: dict | None = None,
+    exo: dict | None = None,
+    shed_price: float | None = None,
+    tol: float = 1e-3,
+) -> EngineResult:
+    """Clear one engine in the EDAM-literal form: one power balance PER AREA
+    (dual ``λ̂_a``, the per-BAA energy price) tied together by directional
+    scheduled-transfer variables ``t_ab ≥ 0`` on the declared interfaces, each
+    capped by its released capacity (EDAM Draft Technical Description §3, §3.3,
+    §5.2: matched export/import TSR pairs, net transfer in each BAA's balance).
+
+    The transfer variables are FLOW-INERT (the GAP-to-GAP convention): physical
+    line flows come from the actual nodal injections, and the hub-decomposition
+    identity makes that exact for any transfer split consistent with the net
+    positions. Transfers therefore do two jobs only — they carry the
+    per-interface scheduling limits, and they are the tags the settlement rides
+    on. Because the split does not touch flows, a slack interface CYCLE leaves
+    the tags undetermined; the tags are pinned by a SECOND, lexicographic stage
+    that minimizes total scheduled MW at the cost-optimal dispatch (tagged
+    DIRECT wherever a direct interface with released capacity exists; the
+    documented house convention — real EDAM leaves residual ties to the
+    solver). The two-stage form leaves every price and dual untouched.
+
+    Parameters
+    ----------
+    areas : dict
+        ``{area: [buses]}`` — a DISJOINT partition covering every bus that
+        carries this engine's generation or load.
+    interfaces : dict
+        ``{(a, b): limit}`` — the interfaces that EXIST (pairs may be in either
+        order; stored sorted). ``limit`` is the released transfer capacity
+        ``T̄_ab`` applied to each direction, or ``None`` for unlimited. A pair
+        absent from the dict has NO interface: no schedule may ride it, however
+        the wires connect.
+    curves : dict, optional
+        ``{gen: (a, b)}`` rising linear marginal costs — clears the convex QP
+        (``trust-constr``) instead of the flat LP, as in ``solve_engine_qp``.
+    exo : dict, optional
+        ``{bus: MW}`` price-taking exogenous injections (positive = injection),
+        as in ``solve_engine_dispatch``. Every exo bus must lie in a declared
+        area: the injection credits that area's power balance, enters the line
+        flows through the PTDF, and moves the net position the tags settle —
+        exactly the legacy fold-in of ``exo`` into the interchange.
+    shed_price : float, optional
+        Load-shed relaxation at penalty V, as in ``solve_engine_dispatch``.
+
+    Returns
+    -------
+    EngineResult
+        As usual, plus ``area_prices`` (``λ̂_a``), ``transfers`` (net scheduled
+        MW per sorted pair, the stage-two tags), ``transfer_duals`` (signed
+        ``μ_T^{ab} = λ̂_b − λ̂_a`` where a limit binds, else 0), and
+        ``transfer_limits``. ``lmp`` is ``λ̂_{a(n)} + Σ_m SF_{n,m} μ_m`` and
+        ``energy_price`` is the LMP at the PTDF slack bus (equal to the pooled
+        energy price whenever no interface binds).
+    """
+    curves = curves or {}
+    areas = {str(a): [str(b) for b in bs] for a, bs in areas.items()}
+    names = list(areas)
+    A = len(names)
+    area_of: dict[str, str] = {}
+    for a, bs in areas.items():
+        for b in bs:
+            if b in area_of:
+                raise ValueError(f"bus {b} appears in two areas ({area_of[b]}, {a})")
+            area_of[b] = a
+    for b in engine.buses:
+        if str(b) not in area_of:
+            raise ValueError(f"engine bus {b} is not covered by `areas`")
+
+    exo = {str(k): float(v) for k, v in (exo or {}).items() if float(v) != 0.0}
+    for b in exo:
+        if b not in area_of:
+            raise ValueError(f"exo bus {b} is not covered by `areas`")
+    exo_vec = np.zeros(pt.n_bus)
+    for bus, mw in exo.items():
+        exo_vec[pt.bus_idx[bus]] += mw
+
+    ifc: list[tuple[str, str]] = []
+    lims: list[float | None] = []
+    for k, v in interfaces.items():
+        a, b = sorted((str(k[0]), str(k[1])))
+        if a not in areas or b not in areas or a == b:
+            raise ValueError(f"interface {k} does not join two distinct declared areas")
+        ifc.append((a, b))
+        lims.append(None if v is None else float(v))
+    P = len(ifc)
+
+    gen_ids = list(engine.gens)
+    G = len(gen_ids)
+    if G == 0:
+        raise ValueError(f"Engine {engine.name!r} has no generators.")
+    gen_bus = [str(engine.gens[g]["bus"]) for g in gen_ids]
+    cap = np.array([engine.gens[g]["p_nom"] for g in gen_ids])
+    a_c = np.array([curves.get(g, (engine.gens[g]["cost"], 0.0))[0] for g in gen_ids])
+    b_c = np.array([curves.get(g, (engine.gens[g]["cost"], 0.0))[1] for g in gen_ids])
+
+    shed_bus: list[str] = []
+    shed_cap_l: list[float] = []
+    if shed_price is not None:
+        for bb, v in engine.loads.items():
+            if float(v) > 0:
+                shed_bus.append(str(bb))
+                shed_cap_l.append(float(v))
+    K = len(shed_bus)
+    shed_cap = np.array(shed_cap_l) if K else np.zeros(0)
+
+    load_vec = np.zeros(pt.n_bus)
+    for bus, mw in engine.loads.items():
+        load_vec[pt.bus_idx[str(bus)]] += mw
+
+    N = G + K + 2 * P                                    # g, u, then (fwd, rev) per interface
+    a_idx = {a: r for r, a in enumerate(names)}
+
+    # ── Per-area balances:  Σ_a g + Σ_a u − Σ_out t + Σ_in t = load_a ──────
+    A_bal = np.zeros((A, N))
+    b_bal = np.zeros(A)
+    for i, gb in enumerate(gen_bus):
+        A_bal[a_idx[area_of[gb]], i] = 1.0
+    for j, sb in enumerate(shed_bus):
+        A_bal[a_idx[area_of[sb]], G + j] = 1.0
+    for p, (x, y) in enumerate(ifc):
+        A_bal[a_idx[x], G + K + 2 * p] = -1.0            # t_xy exports from x …
+        A_bal[a_idx[y], G + K + 2 * p] = +1.0            # … and imports into y
+        A_bal[a_idx[x], G + K + 2 * p + 1] = +1.0        # t_yx the reverse
+        A_bal[a_idx[y], G + K + 2 * p + 1] = -1.0
+    for a in names:
+        b_bal[a_idx[a]] = sum(load_vec[pt.bus_idx[bb]] - exo_vec[pt.bus_idx[bb]]
+                              for bb in areas[a])
+
+    # ── Activated line limits (transfers are flow-inert: zero columns) ─────
+    if engine.activated_lines == "all":
+        act = list(range(pt.n_line))
+    else:
+        act = [pt.line_idx[str(l)] for l in engine.activated_lines]
+    Ffix = pt.ptdf @ (exo_vec - load_vec)
+    flow_rows = np.zeros((len(act), N))
+    for r, l in enumerate(act):
+        for i, gb in enumerate(gen_bus):
+            flow_rows[r, i] = pt.ptdf[l, pt.bus_idx[gb]]
+        for j, sb in enumerate(shed_bus):
+            flow_rows[r, G + j] = pt.ptdf[l, pt.bus_idx[sb]]
+
+    t_ub = np.array([np.inf if v is None else v for v in lims for _ in (0, 1)])
+    lo = np.zeros(N)
+    hi = np.concatenate([cap, shed_cap, t_ub])
+
+    if not curves:
+        # ---- flat-offer LP (HiGHS) ----------------------------------------
+        c_vec = np.concatenate([a_c, np.full(K, float(shed_price)) if K else np.zeros(0),
+                                np.zeros(2 * P)])
+        A_ub, b_ub = [], []
+        for r, l in enumerate(act):
+            A_ub.append(flow_rows[r]);  b_ub.append(pt.s_nom[l] - Ffix[l])
+            A_ub.append(-flow_rows[r]); b_ub.append(pt.s_nom[l] + Ffix[l])
+        res = linprog(c_vec, A_ub=np.array(A_ub) if A_ub else None,
+                      b_ub=np.array(b_ub) if b_ub else None,
+                      A_eq=A_bal, b_eq=b_bal,
+                      bounds=list(zip(lo, [None if np.isinf(h) else h for h in hi])),
+                      method="highs")
+        if not res.success:
+            raise RuntimeError(f"Engine {engine.name!r} infeasible: {res.message}")
+        x = res.x
+        lamhat = {a: float(res.eqlin.marginals[a_idx[a]]) for a in names}
+        m = res.ineqlin.marginals if A_ub else np.array([])
+        line_dual = {pt.lines[l]: 0.0 for l in range(pt.n_line)}
+        cong = np.zeros(pt.n_bus)
+        for r, l in enumerate(act):
+            mu = float(m[2 * r] - m[2 * r + 1])
+            line_dual[pt.lines[l]] = mu
+            cong += pt.ptdf[l] * mu
+    else:
+        # ---- rising-MC QP (trust-constr), duals from KKT stationarity ------
+        H = np.zeros((N, N))
+        H[np.arange(G), np.arange(G)] = b_c
+        c_lin = np.concatenate([a_c, np.full(K, float(shed_price)) if K else np.zeros(0),
+                                np.zeros(2 * P)])
+        cons = [LinearConstraint(A_bal, b_bal, b_bal)]
+        if act:
+            cons.append(LinearConstraint(
+                flow_rows, np.array([-pt.s_nom[l] - Ffix[l] for l in act]),
+                np.array([pt.s_nom[l] - Ffix[l] for l in act])))
+        x0 = np.minimum(np.where(np.isinf(hi), load_vec.sum(), hi),
+                        np.full(N, load_vec.sum() / max(N, 1)))
+        r = minimize(lambda z: 0.5 * z @ (H @ z) + c_lin @ z, x0,
+                     method="trust-constr", jac=lambda z: H @ z + c_lin,
+                     hess=lambda z: H, constraints=cons,
+                     bounds=Bounds(lo, hi),
+                     options={"gtol": 1e-10, "xtol": 1e-12, "maxiter": 3000})
+        x = r.x
+        binding = [l for rr, l in enumerate(act)
+                   if abs(flow_rows[rr] @ x + Ffix[l]) > pt.s_nom[l] - 1e-4]
+        # KKT unknowns: [λ̂_a … , μ_l for binding lines]; rows from interior
+        # generators/shed (marginal cost pins its area's price + congestion) and
+        # interior transfers (a slack interface with flow ties its two λ̂ together).
+        rows, rhs = [], []
+        def _row(area, bus=None):
+            rc = [0.0] * A + ([pt.ptdf[l, pt.bus_idx[bus]] for l in binding] if bus else [0.0] * len(binding))
+            rc[a_idx[area]] = 1.0
+            return rc
+        for i in range(G):
+            if tol < x[i] < cap[i] - tol:
+                rows.append(_row(area_of[gen_bus[i]], gen_bus[i]))
+                rhs.append(a_c[i] + b_c[i] * x[i])
+        for j in range(K):
+            if tol < x[G + j] < shed_cap[j] - tol:
+                rows.append(_row(area_of[shed_bus[j]], shed_bus[j]))
+                rhs.append(float(shed_price))
+        for p, (xx, yy) in enumerate(ifc):
+            for col, (fr, to) in ((G + K + 2 * p, (xx, yy)), (G + K + 2 * p + 1, (yy, xx))):
+                ub = hi[col]
+                if x[col] > tol and (np.isinf(ub) or x[col] < ub - tol):
+                    rc = [0.0] * (A + len(binding))
+                    rc[a_idx[fr]] = 1.0
+                    rc[a_idx[to]] = -1.0
+                    rows.append(rc)                       # interior transfer: λ̂_fr = λ̂_to
+                    rhs.append(0.0)
+        if rows:
+            sol, *_ = np.linalg.lstsq(np.array(rows), np.array(rhs), rcond=None)
+        else:
+            on = [i for i in range(G) if x[i] > tol]
+            flat = float(max(a_c[i] + b_c[i] * x[i] for i in on)) if on else float(np.min(a_c))
+            sol = np.array([flat] * A + [0.0] * len(binding))
+        lamhat = {a: float(sol[a_idx[a]]) for a in names}
+        line_dual = {pt.lines[l]: 0.0 for l in range(pt.n_line)}
+        cong = np.zeros(pt.n_bus)
+        for k2, l in enumerate(binding):
+            mu = float(sol[A + k2])
+            line_dual[pt.lines[l]] = mu
+            cong += pt.ptdf[l] * mu
+
+    g_opt, u_opt = x[:G], x[G:G + K]
+
+    # ── Stage two: the tags — minimal total scheduled MW at this dispatch ──
+    ex = {a: float(sum(g_opt[i] for i in range(G) if area_of[gen_bus[i]] == a)
+                   + sum(u_opt[j] for j in range(K) if area_of[shed_bus[j]] == a)
+                   - b_bal[a_idx[a]]) for a in names}     # net export of each area
+    transfers = {k: 0.0 for k in ifc}
+    if P:
+        A_t = A_bal[:A - 1, G + K:]                       # drop one redundant balance row
+        b_t = np.array([-ex[a] for a in names[:A - 1]])   # −Σ_out t + Σ_in t = −e_a^out
+        r2 = linprog(np.ones(2 * P), A_eq=A_t, b_eq=b_t,
+                     bounds=[(0, None if np.isinf(u) else u) for u in t_ub],
+                     method="highs")
+        if not r2.success:
+            raise RuntimeError(f"transfer tagging stage infeasible: {r2.message}")
+        for p, k in enumerate(ifc):
+            transfers[k] = float(r2.x[2 * p] - r2.x[2 * p + 1])
+            if abs(transfers[k]) < 1e-9:
+                transfers[k] = 0.0
+
+    # Signed interface duals: λ̂_b − λ̂_a wherever the pair's limit binds.
+    transfer_duals = {}
+    for p, (xx, yy) in enumerate(ifc):
+        binds = (lims[p] is not None
+                 and (abs(transfers[(xx, yy)]) > lims[p] - 1e-4
+                      or abs(x[G + K + 2 * p]) > lims[p] - 1e-4
+                      or abs(x[G + K + 2 * p + 1]) > lims[p] - 1e-4))
+        transfer_duals[(xx, yy)] = float(lamhat[yy] - lamhat[xx]) if binds else 0.0
+
+    lmp = {bb: lamhat[area_of[bb]] + float(cong[pt.bus_idx[bb]]) if bb in area_of
+           else float("nan") for bb in pt.buses}
+    # buses outside the declared areas (none, per the cover check, unless the
+    # partition covers only the engine's buses on a larger network): price them
+    # off the slack area's λ̂ plus congestion so the dict stays total.
+    for bb in pt.buses:
+        if bb not in area_of:
+            lmp[bb] = lamhat[names[0]] + float(cong[pt.bus_idx[bb]])
+
+    gen_by_bus: dict[str, float] = {}
+    for i, gid in enumerate(gen_ids):
+        gen_by_bus[gen_bus[i]] = gen_by_bus.get(gen_bus[i], 0.0) + float(g_opt[i])
+    inj = np.zeros(pt.n_bus)
+    for bb, mw in gen_by_bus.items():
+        inj[pt.bus_idx[bb]] += mw
+    for j, sb in enumerate(shed_bus):
+        inj[pt.bus_idx[sb]] += u_opt[j]
+    inj += exo_vec - load_vec
+    flow_own = {pt.lines[l]: float(pt.ptdf[l] @ inj) for l in range(pt.n_line)}
+
+    return EngineResult(
+        name=engine.name,
+        dispatch={gid: float(g_opt[i]) for i, gid in enumerate(gen_ids)},
+        gen_by_bus=gen_by_bus,
+        load_by_bus={str(bb): float(v) for bb, v in engine.loads.items()},
+        exo_by_bus=dict(exo),
+        injection=inj,
+        lmp=lmp,
+        energy_price=float(lmp[pt.slack_bus]),
+        line_dual=line_dual,
+        flow_own=flow_own,
+        total_cost=float(np.sum(a_c * g_opt + 0.5 * b_c * g_opt ** 2)),
+        status="optimal (two-stage: dispatch, then min-total-schedule tags)",
+        shed_by_bus={sb: float(uu) for sb, uu in zip(shed_bus, u_opt) if uu > 1e-9},
+        area_prices=lamhat,
+        transfers=transfers,
+        transfer_duals=transfer_duals,
+        transfer_limits={k: lims[p] for p, k in enumerate(ifc)},
     )
 
 
@@ -801,3 +1037,40 @@ def seam_dual_gap(results: list[EngineResult], buses: list[str]) -> pd.DataFrame
             a, b = names[i], names[j]
             df[f"Δλ[{a}→{b}]"] = (df[f"λ[{b}]"] - df[f"λ[{a}]"]).round(2)
     return df
+
+
+if __name__ == "__main__":
+    # Smoke: the EDAM-literal transfer form against the pooled engines.
+    import footprints as fpmod
+    import wscc9_model as wm
+
+    pt = compute_ptdf(wm.build_network({"line_4": 40.0}), slack_bus="1")
+    eng = wm.make_engine("UNIFIED", buses=pt.buses)
+    fp = fpmod.make(pt, {"BA-1": ["2", "8", "7", "6", "3"], "BA-2": ["1", "9", "4", "5"]},
+                    {"BA-1": "#993AFF", "BA-2": "#2471A3"})
+    pooled = solve_engine_dispatch(pt, eng)
+    new = solve_engine_transfers(pt, eng, fp.defs, {("BA-1", "BA-2"): None})
+    assert all(abs(pooled.lmp[b] - new.lmp[b]) < 1e-4 for b in pt.buses), "pooled equivalence"
+    capped = solve_engine_transfers(pt, eng, fp.defs, {("BA-1", "BA-2"): 30.0})
+    k12 = ("BA-1", "BA-2")
+    assert abs(capped.transfers[k12] - 30.0) < 1e-4, "capped schedule at its released capacity"
+    assert abs(capped.transfer_duals[k12]
+               - (capped.area_prices["BA-2"] - capped.area_prices["BA-1"])) < 1e-3, \
+        "binding interface dual = lamhat gap"
+    print("2-BA: pooled equivalence OK; capped interface "
+          f"t = {capped.transfers[k12]:.1f} MW at dual {capped.transfer_duals[k12]:+.2f}")
+
+    # congested triangle with A's imports capped: every stream nontrivial
+    BA3 = {"A": ["1", "4", "5"], "B": ["3", "6", "7"], "C": ["2", "8", "9"]}
+    r = solve_engine_transfers(pt, eng, BA3,
+                               {("A", "B"): 40.0, ("A", "C"): 20.0, ("B", "C"): None},
+                               shed_price=150.0)
+    Nsum = sum(r.lmp[b] * (wm.DEFAULT_LOADS.get(b, 0) - r.gen_by_bus.get(b, 0)) for b in pt.buses)
+    R = sum(abs(r.line_dual[l] * r.flow_own[l]) for l in pt.lines)
+    RT = sum(abs(r.transfer_duals[k] * r.transfers[k]) for k in r.transfers)
+    assert abs(Nsum - R - RT) < 1e-2 and RT > 100, "sum N_a = R + R_T (capped triangle)"
+    assert all(abs(r.transfer_duals[(x, y)] - (r.area_prices[y] - r.area_prices[x])) < 1e-3
+               for (x, y) in [("A", "B"), ("A", "C")]), "binding dual = lamhat gap"
+    lamhat_str = {a: round(v, 2) for a, v in r.area_prices.items()}
+    print(f"3-BA capped triangle: sum N_a = {Nsum:,.2f} = R ({R:,.2f}) + R_T ({RT:,.2f}); "
+          f"lamhat {lamhat_str}")

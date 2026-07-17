@@ -59,10 +59,17 @@ packages and pulls in the helper modules automatically.
   (and transfer) revenue is allocated, Method 1 vs Method 2.
   [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pdockery/wscc9-illustrative-model/blob/main/201_congestion_revenue_allocation.ipynb)
 
-- **202 · Market seams** — two market footprints on the shared grid; the three seam
-  issues (dispatch interference, inefficient accommodation, participant-initiated
-  interchange), the risk a trader carries, and the seam ledger.
-  [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pdockery/wscc9-illustrative-model/blob/main/202_market_seams.ipynb)
+- **202 · The market seam** — the hinge from one market to two: two engines clearing
+  independently on the shared grid, each seam line allocated to one market (the mirror
+  of the two-BA tie assignment) with the superposition priced by neither, two prices at
+  every bus (the seam dual gap), and the unified counterfactual that bounds the welfare
+  loss.
+  [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pdockery/wscc9-illustrative-model/blob/main/202_the_market_seam.ipynb)
+
+- **204 · Market seam issues** — the three congestion-coordination issues that follow
+  (dispatch interference, inefficient accommodation, participant-initiated interchange),
+  the risk a trader carries, and the seam ledger.
+  [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pdockery/wscc9-illustrative-model/blob/main/204_market_seam_issues.ipynb)
 
 - **212 · Two markets and a transfer** — two markets on three BAs: Market A is two
   non-connected BAs coordinated by a transfer, which Market B wheels; the transaction
@@ -83,6 +90,12 @@ packages and pulls in the helper modules automatically.
   Combined wire, and the Unified clearing).
   [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pdockery/wscc9-illustrative-model/blob/main/302_two_market_contingency.ipynb)
 
+- **331 · The self-schedule incentive** — does the congestion-revenue allocation rule
+  change what participants bid? A rebate keyed to balanced firm-rights self-schedules
+  makes out-of-merit self-scheduling privately rational (and can displace in-merit
+  generation), while counterflow needs no special settlement.
+  [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pdockery/wscc9-illustrative-model/blob/main/331_self_schedule_incentive.ipynb)
+
 ## What's here
 
 | File | Role |
@@ -92,10 +105,12 @@ packages and pulls in the helper modules automatically.
 | `111_atc_simultaneous_feasibility.ipynb` | Fundamentals: portfolio planning, ATC, the simultaneous-feasibility test, combined-ATC oversubscription |
 | `112_three_ba_fundamentals.ipynb` | Fundamentals: a third BA and single-node BAs |
 | `201_congestion_revenue_allocation.ipynb` | Two-BA congestion-revenue allocation (Method 1/2) |
-| `202_market_seams.ipynb` | Two markets; three seam issues + trader risk + seam ledger |
+| `202_the_market_seam.ipynb` | Two engines on one grid; disjoint activated sets, the seam dual gap, unified counterfactual |
+| `204_market_seam_issues.ipynb` | Two markets; three seam issues + trader risk + seam ledger |
 | `212_two_market_transfer.ipynb` | Two markets on three BAs; transfer, wheeling, accommodation, timing risk, sandbox |
 | `301_two_settlement_congestion.ipynb` | Moving day-ahead/real-time boundary; contingency + accommodation |
 | `302_two_market_contingency.ipynb` | Two markets; a contingency in the other market; four-view comparison |
+| `331_self_schedule_incentive.ipynb` | The self-schedule incentive: schedule-keyed rebates, out-of-merit gaming, counterflow |
 | `wscc9_model.py` | Network, fleet/loads, the market-engine factory, layout constants |
 | `footprints.py` | Footprint partitions (balancing authorities / markets) and line assignment |
 | `revenue_allocation.py` | Settlement, congestion/transfer-rent allocation, position ledgers |

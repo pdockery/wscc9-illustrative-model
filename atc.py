@@ -104,6 +104,91 @@ def atc(ttc_mw: float, etc: float = 0.0, trm: float = 0.0, cbm: float = 0.0) -> 
     return max(0.0, ttc_mw - trm - etc - cbm)
 
 
+def hub_path_shift_factors(pt, weights_from, weights_to) -> np.ndarray:
+    """Per-MW loading of every line by a HUB-TO-HUB transfer: 1 MW injected
+    distributed over ``weights_from`` (``{bus: w}``, summing to 1) and withdrawn
+    over ``weights_to``. The distributed generalization of
+    :func:`path_shift_factors` — the flow footprint of a GAP-to-GAP scheduled
+    transfer — and slack-independent for the same balanced-transaction reason."""
+    a = np.zeros(pt.n_line)
+    for b, w in weights_from.items():
+        a += float(w) * pt.ptdf[:, pt.bus_idx[str(b)]]
+    for b, w in weights_to.items():
+        a -= float(w) * pt.ptdf[:, pt.bus_idx[str(b)]]
+    return a
+
+
+def interface_ttc(pt, interfaces, weights, monitored="all", tol: float = 1e-6):
+    """Rated-path TTC for a set of balancing-authority interfaces, each rated
+    INDEPENDENTLY — the MOD-029 posture applied interface by interface.
+
+    For each footprint pair the hub-to-hub transfer is ramped on the otherwise
+    unloaded network until the first monitored line reaches its rating,
+    ``TTC_ab = min_l F̄_l / |a_l|`` with ``a`` from
+    :func:`hub_path_shift_factors` (the teaching simplification of the MOD-029
+    R1/R2 transfer study; area-to-area ramps also echo MOD-028's
+    area-interchange structure, but the result is USED the MOD-029 way — a
+    static scalar posted per path). Because each interface is rated ALONE, the
+    scalars ignore cross-path interaction (MOD-029 handles it only through
+    pre-computed nomograms), so a TSP with several interfaces is in general
+    over-assigned relative to what its system can carry at once —
+    :func:`interface_sft` quantifies that overcount for the same set. With the
+    unloaded base case the rating is direction-symmetric, matching the
+    symmetric released-capacity bounds of ``solve_engine_transfers``.
+
+    ``interfaces`` is an iterable of footprint pairs ``(a, b)``; ``weights`` is
+    ``{footprint: {bus: w}}`` (ex-ante aggregation points, e.g.
+    ``revenue_allocation.hub_weights``). Returns
+    ``{(a, b) sorted: (ttc_mw, binding_line)}``."""
+    out = {}
+    for k in interfaces:
+        a, b = sorted((str(k[0]), str(k[1])))
+        sf = hub_path_shift_factors(pt, weights[a], weights[b])
+        best_mw, best_line = np.inf, None
+        for l in _monitored_idx(pt, monitored):
+            if abs(sf[l]) < tol:
+                continue
+            lim = pt.s_nom[l] / abs(sf[l])
+            if lim < best_mw:
+                best_mw, best_line = lim, pt.lines[l]
+        out[(a, b)] = (float(best_mw), best_line)
+    return out
+
+
+def interface_sft(pt, ratings, weights, monitored="all", direction="worst"):
+    """The holistic check the independent ratings skip: superpose EVERY
+    interface's hub-to-hub transfer at its posted rating (oriented toward the
+    sorted pair's second footprint) and report each monitored line's loading —
+    the MOD-030/SFT reading of a MOD-029-style book. Overloaded rows are the
+    over-assignment from path-by-path accounting: capacity sold interface by
+    interface that the transmission service provider's system cannot carry
+    simultaneously.
+
+    ``ratings`` is ``{(a, b): MW}`` (or the ``{(a, b): (MW, line)}`` output of
+    :func:`interface_ttc`). ``direction='sorted'`` superposes every rating
+    oriented toward the sorted pair's second footprint (one signed pattern,
+    counterflows credited — the netted/FTR-style reading);
+    ``direction='worst'`` sums each rating's ABSOLUTE loading per line (no
+    counterflow credit — the firm/OATT reading: the ratings are sold as firm
+    rights exercisable in either direction, so the book must stand up when the
+    directions stack). Returns a DataFrame (line, flow, rating, loading
+    fraction, overloaded)."""
+    if direction not in ("sorted", "worst"):
+        raise ValueError("direction must be 'sorted' or 'worst'")
+    flow = np.zeros(pt.n_line)
+    for k, v in ratings.items():
+        a, b = sorted((str(k[0]), str(k[1])))
+        mw = float(v[0] if isinstance(v, (tuple, list)) else v)
+        contrib = mw * hub_path_shift_factors(pt, weights[a], weights[b])
+        flow += np.abs(contrib) if direction == "worst" else contrib
+    rows = []
+    for l in _monitored_idx(pt, monitored):
+        rows.append(dict(line=pt.lines[l], flow=flow[l], rating=pt.s_nom[l],
+                         loading=abs(flow[l]) / pt.s_nom[l],
+                         overloaded=abs(flow[l]) > pt.s_nom[l] + 1e-6))
+    return pd.DataFrame(rows).set_index("line")
+
+
 # ──────────────────────────────────────────────────────────────────────────
 # Awards and the simultaneous-feasibility test
 # ──────────────────────────────────────────────────────────────────────────
