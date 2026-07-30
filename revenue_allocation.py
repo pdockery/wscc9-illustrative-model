@@ -584,7 +584,7 @@ def autarky_vs_unified(fp, method, alloc, indep, resU, loads=None, cost=None,
     return df.map(lambda v: round(v, 1) if isinstance(v, (int, float)) and not isinstance(v, bool) else v)
 
 
-def _fold_congestion(base, fp, resU, pt, loads):
+def _fold_congestion(base, fp, resU, pt, loads, gen_fleet=None):
     """Fold the congestion-revenue derivation into the **Unified** block of a ROWS-shaped
     ledger (the output of ``autarky_vs_unified`` or ``methodology_ledger``) and add a
     ``TOTAL`` column, so the table walks the whole chain in one object. The Unified section
@@ -609,13 +609,13 @@ def _fold_congestion(base, fp, resU, pt, loads):
         if any(isinstance(v, (int, float)) and not isinstance(v, bool) for v in base.loc[r])
         else "" for r in base.index]
     order = list(base.columns)
-    rc = regional_congestion(fp, resU, pt, loads)
+    rc = regional_congestion(fp, resU, pt, loads, gen_fleet=gen_fleet)
     nc = {a: round(rc[a]["line_congestion"], 1) for a in fp.areas}
     p = {b: resU.gen_by_bus.get(b, 0.0) - (float(loads.get(b, 0.0)) - resU.shed_by_bus.get(b, 0.0))
          for b in pt.buses}
     R = round(-sum(resU.line_dual[m] * sum(pt.ptdf[pt.line_idx[m], pt.bus_idx[b]] * p[b]
               for b in pt.buses) for m in pt.lines), 1)
-    TE = round(transfer_settlement(fp, resU, loads), 1)
+    TE = round(transfer_settlement(fp, resU, loads, gen_fleet=gen_fleet), 1)
 
     def _row(consumer_vals, total):
         return [total if c == ("TOTAL", "") else
@@ -631,7 +631,7 @@ def _fold_congestion(base, fp, resU, pt, loads):
         if len(pairs) > 1:
             # the per-interface decomposition of T_E (scheduled tags when the
             # clearing carries them, physical cut flows otherwise)
-            pw = pairwise_transfer_settlement(fp, resU, pt, loads)
+            pw = pairwise_transfer_settlement(fp, resU, pt, loads, gen_fleet=gen_fleet)
             for (a, b), prow in pw.iterrows():
                 idx.append(f"  T_ab: {a} to {b}")
                 body.append(_row({}, round(float(prow["T_ab"]), 1)))
@@ -649,17 +649,22 @@ def _fold_congestion(base, fp, resU, pt, loads):
 
 
 def autarky_vs_unified_congestion(fp, method, alloc, indep, resU, pt, *,
-                                  loads=None, cost=None, curves=None, gen_bus=None):
+                                  loads=None, cost=None, curves=None, gen_bus=None,
+                                  gen_fleet=None):
     """``autarky_vs_unified`` (the ``N_a = L_a - G_a`` net-position ledger) with the
     congestion-revenue derivation folded into the Unified block by :func:`_fold_congestion`
     -- the system rent R, its split into ``N_a^c`` by region, and the allocation, above each
     region's consumer/generator Pareto positions. ``method`` / ``alloc`` / ``indep`` / ``resU``
     are as in ``autarky_vs_unified``; ``pt`` is the PTDF used for ``N_a^c``. Pass ``curves``
-    (``{gen:(a,b)}``) to make generator producer surplus the area-under-MC form."""
+    (``{gen:(a,b)}``) to make generator producer surplus the area-under-MC form. Pass
+    ``gen_fleet`` whenever the clearing uses a NON-DEFAULT fleet: the aggregation-point
+    (hub) weights are generation-weighted, so omitting it silently builds each region's
+    hub from the canonical fleet's nameplates and mis-sites ``N_a^c`` (the partition
+    ``sum_a N_a^c + T_E`` still closes on R -- only the split moves)."""
     loads = wm.DEFAULT_LOADS if loads is None else loads
     return _fold_congestion(
         autarky_vs_unified(fp, method, alloc, indep, resU, loads, cost, curves, gen_bus),
-        fp, resU, pt, loads)
+        fp, resU, pt, loads, gen_fleet=gen_fleet)
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -1450,17 +1455,19 @@ def methodology_ledger(fp, alloc, indep, resU, loads=None, cost=None):
     return df.map(lambda v: round(v, 1) if isinstance(v, (int, float)) and not isinstance(v, bool) else v)
 
 
-def methodology_ledger_congestion(fp, alloc, indep, resU, pt, *, loads=None, cost=None):
+def methodology_ledger_congestion(fp, alloc, indep, resU, pt, *, loads=None, cost=None,
+                                  gen_fleet=None):
     """``methodology_ledger`` with the congestion-revenue derivation folded into the Unified
     block by :func:`_fold_congestion` -- the system rent R, its split into the congestion each
     region creates ``N_a^c``, and the rent THIS methodology allocates (renamed
     ``Unified: Congestion Revenue Allocation``), above each region's consumer/generator Pareto
     positions. ``N_a^c`` is the same across methodologies (the dispatch creates it); setting it
     beside each methodology's allocation is the benefit-commensurability comparison. ``alloc``
-    is the ``{ba: $}`` allocation; ``pt`` the PTDF used for ``N_a^c``."""
+    is the ``{ba: $}`` allocation; ``pt`` the PTDF used for ``N_a^c``. Pass ``gen_fleet``
+    with a non-default fleet (the hub weights are generation-weighted)."""
     loads = wm.DEFAULT_LOADS if loads is None else loads
     return _fold_congestion(methodology_ledger(fp, alloc, indep, resU, loads, cost),
-                            fp, resU, pt, loads)
+                            fp, resU, pt, loads, gen_fleet=gen_fleet)
 
 
 def methodology_ledger_4p(fp, indep, resU, *, makewhole, path_hedge, uplift,
@@ -1744,7 +1751,44 @@ def parallel_flow_attribution(fp, res, pt, loads=None):
         row["Transfer flow"] = round(fe, 1)                      # hub-to-hub component F^E_l
         row["Transfer rent"] = round(abs(mu) * fe * np.sign(Ftot), 0)
         rows.append(row)
-    return pd.DataFrame(rows).set_index("line")
+    cols = ["line", "kind", "manager", "mu", "flow", "rent"]
+    for ba in fp.names:
+        cols += [f"{ba} flow", f"{ba} rent"]
+    cols += ["Transfer flow", "Transfer rent"]
+    return pd.DataFrame(rows, columns=cols).set_index("line")   # empty when no line binds
+
+
+def loop_flow_charge(fp, res, pt, host, nbr, loads=None):
+    """The neighbour's parallel-flow value on the host's binding lines, at the market price.
+
+    For every line INTERNAL to ``host`` that binds, take its shadow price ``mu_m`` and the
+    NEIGHBOUR's contribution to its flow, ``F_m^{nbr} = sum_{n in nbr} SF_{n,m}(g_n - d_n)``
+    (hub-relative shift factors, so the split is reference-bus-invariant), and return
+
+        tau = - sum_m mu_m F_m^{nbr}
+
+    -- the ``loop_flow_triangle`` host->nbr leg, identically equal to ``N_nbr^c`` and to the
+    host's marginal redispatch cost. It is SIGNED: negative in an interval whose neighbour
+    flow relieves the constraint. Returns 0.0 when no host-internal line binds.
+    """
+    loads = wm.DEFAULT_LOADS if loads is None else loads
+    weights = hub_weights(fp, "auto", loads)
+    p = {b: res.gen_by_bus.get(b, 0.0) - float(loads.get(b, 0.0)) for b in pt.buses}
+    host_buses, nbr_buses = set(fp.defs[host]), fp.defs[nbr]
+    tau = 0.0
+    for l in pt.lines:
+        mu = res.line_dual[l]
+        if abs(mu) < 1e-3:
+            continue
+        b0, b1 = pt.line_buses[pt.line_idx[l]]
+        if b0 not in host_buses or b1 not in host_buses:      # only the host's OWN facilities
+            continue
+        li = pt.line_idx[l]
+        sfa = sum(w * pt.ptdf[li, pt.bus_idx[b]] for b, w in weights[nbr].items())
+        Fnbr = sum((pt.ptdf[li, pt.bus_idx[b]] - sfa) * p[b] for b in nbr_buses)
+        Ftot = sum(pt.ptdf[li, pt.bus_idx[b]] * p[b] for b in pt.buses)
+        tau += abs(mu) * Fnbr * np.sign(Ftot)     # = -mu_m F_m^{nbr} (sign folds into |mu|*sign(F))
+    return float(tau)
 
 
 # ──────────────────────────────────────────────────────────────────────────
