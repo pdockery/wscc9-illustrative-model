@@ -244,6 +244,117 @@ def make_engine(
     return MarketEngine(name=name, gens=gens, loads=own_loads, activated_lines=activated)
 
 
+# ──────────────────────────────────────────────────────────────────────────
+# The Case object — this module packaged as an injectable scenario
+# ──────────────────────────────────────────────────────────────────────────
+class WSCC9Case:
+    """The 9-bus teaching case as a ``seams_engine.Case`` (the reference
+    implementation of that contract).
+
+    Nothing here is new: every attribute aliases a constant or function this
+    module already exposes, so the case and the module can never disagree.
+    Accessors return copies — a notebook that mutates ``case.gen_fleet`` (or an
+    engine built from it) must not corrupt the canonical numbers underneath.
+
+    ``build()`` returns a FRESH network each call and caches only the PTDF:
+    notebooks mutate networks and engines in place, so a shared Network object
+    would leak state between cells; the PTDF is a pure function of
+    (ratings, variant) and is safe to memoise.
+    """
+
+    name = "WSCC-9"
+    slack_bus = "1"
+    shed_price = 150.0
+    rotation_deg = ROTATION_DEG
+    center_bus = CENTER_BUS
+    #: {} — on the 9-bus case BA membership is a notebook knob (Footprints),
+    #: not a property of the network.
+    bus_to_area: dict = {}
+
+    def __init__(self):
+        self._pt_cache: dict = {}
+
+    # -- the base scenario (copies; see class docstring) --------------------
+    @property
+    def gen_fleet(self) -> dict:
+        return {g: dict(s) for g, s in DEFAULT_GEN_FLEET.items()}
+
+    @property
+    def loads(self) -> dict:
+        return dict(DEFAULT_LOADS)
+
+    # -- drawing layout -----------------------------------------------------
+    @property
+    def bus_colors(self) -> dict:
+        return dict(BUS_COLORS)
+
+    @property
+    def coords(self) -> dict:
+        return dict(COORDS)
+
+    @property
+    def ring_order(self) -> list:
+        return list(RING_ORDER)
+
+    # -- construction -------------------------------------------------------
+    def build(self, line_ratings: dict | None = None, **variant):
+        """A fresh 9-bus network + (cached) PTDF as a ``CaseNetwork``.
+
+        ``variant`` forwards to :func:`build_network` (today: ``split_5_6``);
+        an unknown kwarg raises ``TypeError`` there, which is deliberate — a
+        different case must fail loudly on a variant it does not implement.
+        """
+        from seams_engine import CaseNetwork
+
+        n = build_network(line_ratings, **variant)
+        key = (tuple(sorted((line_ratings or {}).items())),
+               tuple(sorted(variant.items())))
+        if key not in self._pt_cache:
+            self._pt_cache[key] = compute_ptdf(n, slack_bus=self.slack_bus)
+        return CaseNetwork(network=n, pt=self._pt_cache[key], fg=None)
+
+    def make_engine(self, name, buses, gen_fleet=None, loads=None,
+                    activated="all") -> MarketEngine:
+        return make_engine(name, buses, gen_fleet=gen_fleet, loads=loads,
+                           activated=activated)
+
+    def hub_kind(self) -> str:
+        return "auto"      # GAP where a footprint has generation, ELAP otherwise
+
+    # -- risk drivers: risk.load_dists/cost_dists resolve their spreads
+    #    through THESE case attributes; the 9-bus values stay documented in
+    #    risk.DEFAULT_LOAD_SD / DEFAULT_COST_SD (the canonical edit-once knobs)
+    #    and are mirrored here, so the case and the module can never disagree.
+    @property
+    def risk_load_sd(self) -> dict:
+        import risk
+
+        return dict(risk.DEFAULT_LOAD_SD)
+
+    @property
+    def risk_cost_sd(self) -> dict:
+        import risk
+
+        return dict(risk.DEFAULT_COST_SD)
+
+    def drivers(self, kinds=("load", "cost")) -> dict:
+        """The case's canonical uncertain drivers as a ``{key: dist}`` mapping ready for
+        ``risk.monte_carlo`` / ``risk.gauss_hermite`` — per-bus loads and per-generator costs
+        on the 9-bus case (a bundle-backed case adds its per-BA factor structure here)."""
+        import risk
+
+        d: dict = {}
+        if "load" in kinds:
+            d.update(risk.load_dists())
+        if "cost" in kinds:
+            d.update(risk.cost_dists())
+        return d
+
+
+#: The singleton the shared libraries resolve through ``seams_engine.active()``.
+CASE = WSCC9Case()
+
+
 if __name__ == "__main__":
     pt = shift_factors()
     print("fleet:", {g: (s["bus"], s["cost"], s["p_nom"]) for g, s in DEFAULT_GEN_FLEET.items()})

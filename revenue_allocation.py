@@ -44,9 +44,19 @@ import pandas as pd
 import numpy as np
 
 import atc
-import wscc9_model as wm
-from seams_engine import (compute_ptdf, solve_engine_dispatch, solve_engine_qp,
-                          solve_engine_transfers)
+from seams_engine import (active as _case, compute_ptdf, solve_engine_dispatch,
+                          solve_engine_qp, solve_engine_transfers)
+
+
+def _cn(ratings=None, **variant):
+    """The ambient case's network + shift factors (a ``CaseNetwork``).
+
+    This is the ONLY way this module builds a network: through the case, never
+    by importing a scenario module. On the 9-bus case it reproduces the old
+    ``compute_ptdf(wm.build_network(ratings), slack_bus="1")`` exactly (the
+    case's slack bus IS "1"); on any other case it builds that case instead.
+    """
+    return _case().build(ratings, **variant)
 
 #: Display names for the transfer methodologies.
 T_NAMES = {1: "T1 -- fixed shares (TRANSFER_SPLIT)",
@@ -197,7 +207,7 @@ def _ba_shares(fp, spec, res=None, loads=None):
     if spec == "even":
         return {b: 1.0 / len(names) for b in names}
     if spec == "interchange":
-        loads = wm.DEFAULT_LOADS if loads is None else loads
+        loads = _case().loads if loads is None else loads
         e = {a: abs(sum(float(loads.get(b, 0.0)) - res.shed_by_bus.get(b, 0.0)
                         - res.gen_by_bus.get(b, 0.0) for b in fp.defs[a])) for a in names}
         tot = sum(e.values())
@@ -216,7 +226,7 @@ def pairwise_transfer_settlement(fp, res, pt, loads=None, gen_fleet=None, weight
     line. Two per-interface quantities are reported side by side:
 
     * ``t_physical`` — the ORIENTED net physical flow a→b summed over the
-      pair's ties (what the wires carry);
+      pair's ties (what the transmission elements carry);
     * ``t_scheduled`` — the engine's cleared transfer tags when the clearing
       came from ``solve_engine_transfers`` (``res.transfers``); on a TREE
       interface topology the per-area balances pin these to the cut flows, on
@@ -231,7 +241,7 @@ def pairwise_transfer_settlement(fp, res, pt, loads=None, gen_fleet=None, weight
     net positions. The ``half share each`` column is the EDAM allocation rule
     (each transfer's surplus split equally between the two BAAs party to it).
     """
-    loads = wm.DEFAULT_LOADS if loads is None else loads
+    loads = _case().loads if loads is None else loads
     if weights is None:
         weights = hub_weights(fp, "auto", loads, gen_fleet)
     lam = {a: sum(w * res.lmp[b] for b, w in weights[a].items()) for a in fp.names}
@@ -271,16 +281,54 @@ def pairwise_transfer_settlement(fp, res, pt, loads=None, gen_fleet=None, weight
     return df
 
 
-def fp_interfaces(fp, pt):
-    """The interface topology a footprint partition implies: the unordered
-    footprint pairs joined by at least one tie line, ``{(a, b) sorted: [ties]}``."""
-    out: dict = {}
+def fp_interfaces(fp, pt, areas=None):
+    """The interface topology a partition implies: the unordered pairs joined
+    by at least one tie line, ``{(a, b) sorted: [ties]}``.
+
+    ``areas`` (``{area: [buses]}``, optional) computes the interfaces of a
+    FINER partition than the footprints — the WECC two-level structure, where
+    BA areas nest inside market-engine footprints and the per-BA interfaces are
+    what ``solve_engine_transfers`` schedules over. Default: the footprints
+    themselves (the two-level structure collapsed, today's behaviour)."""
+    if areas is not None:
+        a_of = {str(b): a for a, bs in areas.items() for b in bs}
+        out: dict = {}
+        for l in pt.lines:
+            b0, b1 = pt.line_buses[pt.line_idx[l]]
+            a0, a1 = a_of.get(b0), a_of.get(b1)
+            if a0 != a1 and a0 is not None and a1 is not None:
+                out.setdefault(tuple(sorted((a0, a1))), []).append(l)
+        return out
+    out = {}
     for l in pt.lines:
         b0, b1 = pt.line_buses[pt.line_idx[l]]
         a0, a1 = fp.fp_of(b0), fp.fp_of(b1)
         if a0 != a1 and a0 is not None and a1 is not None:
             out.setdefault(tuple(sorted((a0, a1))), []).append(l)
     return out
+
+
+def flowgate_rent_table(res) -> pd.DataFrame:
+    """Per-FLOWGATE congestion rent ``|μ_k · f_k|`` (+ a TOTAL row).
+
+    The flowgate analogue of :func:`line_rent_table` — with one deliberate
+    non-identity: for a path whose members carry flow in mixed signs relative
+    to the path orientation, ``Σ_m |μ^impl_m||F_m| ≠ |μ_k f_k|`` per line, so
+    per-line abs-rent does not decompose a flowgate's rent. The SIGNED sums
+    agree exactly (``Σ_m μ^impl_m F_m = Σ_k μ_k f_k``), so total ``R`` and
+    every conservation identity are unaffected; read per-constraint rent off
+    THIS table when the constraint set is flowgates."""
+    rows = []
+    for k, mu in res.fg_dual.items():
+        f = res.fg_flow.get(k, 0.0)
+        fwd, rev = res.fg_limit.get(k, (float("nan"), float("nan")))
+        rows.append(dict(flowgate=k, flow=f, fwd=fwd, rev=rev, mu=mu,
+                         rent=abs(mu * f), binding=abs(mu) > 1e-6))
+    df = pd.DataFrame(rows).set_index("flowgate")
+    if len(df):
+        tot = df[["rent"]].sum()
+        df.loc["TOTAL", "rent"] = float(tot["rent"])
+    return df
 
 
 def solve_with_transfers(fp, ratings, limits=None, gen_fleet=None, loads=None,
@@ -301,9 +349,9 @@ def solve_with_transfers(fp, ratings, limits=None, gen_fleet=None, loads=None,
     others manually. ``exo`` passes price-taking fixed injections through to
     the engine (every exo bus must lie in a footprint). Returns
     ``(n, pt, engine, res)``."""
-    n = wm.build_network(ratings, split_5_6=split_5_6)
-    p = compute_ptdf(n, slack_bus="1")
-    e = wm.make_engine("UNIFIED", buses=p.buses, gen_fleet=gen_fleet, loads=loads)
+    _c = _cn(ratings, split_5_6=split_5_6)
+    n, p = _c.network, _c.pt
+    e = _case().make_engine("UNIFIED", buses=p.buses, gen_fleet=gen_fleet, loads=loads)
     pairs = fp_interfaces(fp, p)
     _W: list = []
     def _mod29(k):
@@ -354,7 +402,7 @@ def allocate_congestion_rent(fp, res, pt, loads, unassigned_split=0.5, te_split=
     """Allocate total congestion rent to the footprints under both methods
     (any number of footprints; the narrative fields below read cleanest at two).
 
-    **Method 1 — rent follows the wire.** Each footprint keeps the rent on the lines
+    **Method 1 — rent follows the transmission element.** Each footprint keeps the rent on the lines
     *assigned* to it (``R_own``); rent on unassigned lines is split by
     ``unassigned_split`` (a :func:`_ba_shares` spec — scalar ``s`` is the
     two-footprint legacy ``s / (1 - s)``, or pass a dict / ``'even'`` /
@@ -473,7 +521,7 @@ def revenue_table(fp, res, pt, loads, te_split=None):
 # ──────────────────────────────────────────────────────────────────────────
 def cost_by_bus(gen_fleet=None):
     """``{bus: marginal cost}`` from a fleet (default the canonical teaching fleet)."""
-    fleet = wm.DEFAULT_GEN_FLEET if gen_fleet is None else gen_fleet
+    fleet = _case().gen_fleet if gen_fleet is None else gen_fleet
     return {s["bus"]: s["cost"] for s in fleet.values()}
 
 
@@ -491,7 +539,7 @@ def _prod_cost(result, bs, cost, curves=None, gen_bus=None):
     if not curves:
         return sum(cost.get(b, 0.0) * result.gen_by_bus.get(b, 0.0) for b in bs)
     if gen_bus is None:
-        gen_bus = {g: s["bus"] for g, s in wm.DEFAULT_GEN_FLEET.items()}
+        gen_bus = {g: s["bus"] for g, s in _case().gen_fleet.items()}
     bset = {str(x) for x in bs}
     pc = 0.0
     for g, gmw in result.dispatch.items():
@@ -512,7 +560,7 @@ def _agg(fp, result, area, loads=None, cost=None, curves=None, gen_bus=None):
     ``MC=a+b*g``) so the production cost — and hence producer surplus ``R − PC`` — is
     the area under marginal cost rather than the flat ``cost*g`` (which is degenerate,
     zero surplus, when each unit sets its own price)."""
-    loads = wm.DEFAULT_LOADS if loads is None else loads
+    loads = _case().loads if loads is None else loads
     cost = cost_by_bus() if cost is None else cost
     bs = fp.areas[area]
     L = sum(result.lmp[b] * (loads.get(b, 0.0) - result.shed_by_bus.get(b, 0.0)) for b in bs)
@@ -530,13 +578,12 @@ def independent_clear(fp, rat, gen_fleet=None, loads=None, shed_price=None, spli
     penalty). Pass ``curves`` (``{gen:(a,b)}``) to clear against **rising linear
     MC curves** (``solve_engine_qp``) instead of flat offers. Returns
     ``(pt, {area: EngineResult|None})``."""
-    n = wm.build_network(rat, split_5_6=split_5_6)
-    pt = compute_ptdf(n, slack_bus="1")
+    pt = _cn(rat, split_5_6=split_5_6).pt
     out = {}
     for area, buses in fp.areas.items():
         act = [l for l in pt.lines if fp.line_assign.get(l) == area]
         try:
-            eng = wm.make_engine(area, buses, gen_fleet=gen_fleet, loads=loads, activated=act)
+            eng = _case().make_engine(area, buses, gen_fleet=gen_fleet, loads=loads, activated=act)
             out[area] = (solve_engine_qp(pt, eng, curves=curves, shed_price=shed_price)
                          if curves else solve_engine_dispatch(pt, eng, shed_price=shed_price))
         except (RuntimeError, ValueError):
@@ -661,7 +708,7 @@ def autarky_vs_unified_congestion(fp, method, alloc, indep, resU, pt, *,
     (hub) weights are generation-weighted, so omitting it silently builds each region's
     hub from the canonical fleet's nameplates and mis-sites ``N_a^c`` (the partition
     ``sum_a N_a^c + T_E`` still closes on R -- only the split moves)."""
-    loads = wm.DEFAULT_LOADS if loads is None else loads
+    loads = _case().loads if loads is None else loads
     return _fold_congestion(
         autarky_vs_unified(fp, method, alloc, indep, resU, loads, cost, curves, gen_bus),
         fp, resU, pt, loads, gen_fleet=gen_fleet)
@@ -688,7 +735,7 @@ def scheduling_subscription(fp, res, area: str, loads=None) -> float:
     ``S_a`` equals its load; under a joint dispatch that displaces the area's
     generation, ``S_a`` collapses and the embedded cost is stranded.
     """
-    loads = wm.DEFAULT_LOADS if loads is None else loads
+    loads = _case().loads if loads is None else loads
     g = sum(res.gen_by_bus.get(b, 0.0) for b in fp.areas[area])
     d = sum(float(loads.get(b, 0.0)) for b in fp.areas[area])
     return min(g, d)
@@ -712,7 +759,7 @@ def transmission_service_recovery(fp, indep, resU, pt, *, embedded, atc_by_ba,
     notebook: both areas recover in autarky, but a joint dispatch that displaces
     one area's generation collapses its ``S`` and strands its embedded cost.
     """
-    loads = wm.DEFAULT_LOADS if loads is None else loads
+    loads = _case().loads if loads is None else loads
     rows = []
     for a in fp.names:
         RR = float(embedded[a]); ATC = float(atc_by_ba[a])
@@ -749,7 +796,7 @@ def scheduling_service_ledger(fp, indep, resU, pt, *, embedded, atc_by_ba,
     "positions sum to −production cost" identity extended by the sunk embedded
     cost. Pair with :func:`transmission_service_recovery` for the recovery rows.
     """
-    loads = wm.DEFAULT_LOADS if loads is None else loads
+    loads = _case().loads if loads is None else loads
     allocU, _, _, _ = allocate_congestion_rent(fp, resU, pt, loads)
     data = {}
     for a in fp.names:
@@ -819,7 +866,13 @@ def allocate_transfer_rent(fp, res, loads, t_method, transfer_split, stream=None
     to the stream. Returns ``{footprint: $}``."""
     RT = transfer_rent(res) if stream is None else float(stream)
     if t_method == 1:
-        return {ba: transfer_split[ba] * RT for ba in fp.names}
+        # Route through _ba_shares so every documented spec form reaches T1
+        # ('even' / 'interchange' / scalar / dict). A dict spec returns its own
+        # values unchanged, so existing call sites are numerically untouched;
+        # before this, T1 indexed the spec directly and the non-dict forms
+        # raised. (Found by the phase-0 golden harness, fixed in phase 4.)
+        sig = _ba_shares(fp, transfer_split, res, loads)
+        return {ba: sig[ba] * RT for ba in fp.names}
     if t_method == 2:
         s = ba_settlement(fp, res, loads)
         payer = max(fp.names, key=lambda ba: s[ba]["net_into_pool"])
@@ -836,9 +889,20 @@ def allocate_transfer_rent(fp, res, loads, t_method, transfer_split, stream=None
             pw = pairwise_transfer_settlement(fp, res, pt, loads, gen_fleet)
             per = {k: float(v) for k, v in pw["T_ab"].items()}
         halves = {ba: 0.0 for ba in fp.names}
+        # An interface may name a party that is NOT a footprint of this
+        # allocation — a pure-junction BA left out of the overlay, or a
+        # price-taking boundary area. Its half has no claimant here, so the
+        # in-universe party keeps the interface's dollars rather than the
+        # allocation raising KeyError on a real network.
         for (a, b), v in per.items():
-            halves[a] += 0.5 * v
-            halves[b] += 0.5 * v
+            ina, inb = a in halves, b in halves
+            if ina and inb:
+                halves[a] += 0.5 * v
+                halves[b] += 0.5 * v
+            elif ina:
+                halves[a] += v
+            elif inb:
+                halves[b] += v
         tot = sum(halves.values())
         if abs(tot) < 1e-9:
             return {ba: RT / len(fp.names) for ba in fp.names}
@@ -936,13 +1000,13 @@ def self_schedule_ledger(fp, ebar, source, sink, mw, *, ratings=None,
     base ratings) rather than any externally mutated shift factors, so the result
     is reproducible whatever clearing the notebook ran before.
     """
-    loads = wm.DEFAULT_LOADS if loads is None else loads
-    fleet = wm.DEFAULT_GEN_FLEET if gen_fleet is None else gen_fleet
+    loads = _case().loads if loads is None else loads
+    fleet = _case().gen_fleet if gen_fleet is None else gen_fleet
     src, snk, S = str(source), str(sink), float(mw)
     src_cost = min(g["cost"] for g in fleet.values() if str(g["bus"]) == src)
-    pt = compute_ptdf(wm.build_network(ratings or {}), slack_bus="1")
+    pt = _cn(ratings or {}).pt
     ifc = {k: float(ebar) for k in fp_interfaces(fp, pt)}
-    mk = lambda: wm.make_engine("UNIFIED", buses=pt.buses, gen_fleet=fleet, loads=loads)
+    mk = lambda: _case().make_engine("UNIFIED", buses=pt.buses, gen_fleet=fleet, loads=loads)
     base = solve_engine_transfers(pt, mk(), fp.defs, ifc)
     ss = solve_engine_transfers(pt, mk(), fp.defs, ifc, exo={src: +S})
 
@@ -1009,7 +1073,7 @@ def net_congestion_position(fp, res, loads=None, weights=None, gen_fleet=None):
     allocation -- distinct from giving each line's rent to the BA that owns it.
     Returns ``{ba: $/h}``.
     """
-    loads = wm.DEFAULT_LOADS if loads is None else loads
+    loads = _case().loads if loads is None else loads
     if weights is None:
         weights = hub_weights(fp, "auto", loads, gen_fleet)
     out = {}
@@ -1051,7 +1115,7 @@ def regional_congestion(fp, res, pt, loads=None, weights=None, gen_fleet=None):
     line_congestion, transfer, congestion)}`` with ``congestion = line_congestion
     = N_a^c`` and ``transfer = 0.0`` (deprecated key -- the transfer settles
     system-wide as ``T_E``, not per region)."""
-    loads = wm.DEFAULT_LOADS if loads is None else loads
+    loads = _case().loads if loads is None else loads
     if weights is None:
         weights = hub_weights(fp, "auto", loads, gen_fleet)
     out = {}
@@ -1079,7 +1143,7 @@ def transfer_settlement(fp, res, loads=None, weights=None, gen_fleet=None):
     transfer's own hub-to-hub flow -- so it is generally nonzero even when the
     scheduling limit is slack, and negative when that flow is net counterflow.
     Conservation: ``sum_a N_a^c + T_E = R + R_T``."""
-    loads = wm.DEFAULT_LOADS if loads is None else loads
+    loads = _case().loads if loads is None else loads
     if weights is None:
         weights = hub_weights(fp, "auto", loads, gen_fleet)
     te = 0.0
@@ -1104,7 +1168,7 @@ def congestion_shift_breakdown(fp, res, pt, loads=None):
     binding line, congestion $/h), plus a ``"<region> total"`` row whose flow column is
     ``F_m^a`` and whose congestion column is ``N_a^c``.
     """
-    loads = wm.DEFAULT_LOADS if loads is None else loads
+    loads = _case().loads if loads is None else loads
     weights = hub_weights(fp, "auto", loads)
     binding = [m for m in pt.lines if abs(res.line_dual[m]) > 1e-3]
     sfa = {ba: {m: sum(w * pt.ptdf[pt.line_idx[m], pt.bus_idx[b]] for b, w in weights[ba].items())
@@ -1157,8 +1221,8 @@ def hub_weights(fp, kind="auto", loads=None, gen_fleet=None):
     are FIXED data (``p_nom`` / load levels), never dispatch outcomes, so the hub
     definition cannot be moved by the clearing it settles -- the same discipline
     as EDAM's predefined distribution factors."""
-    loads = wm.DEFAULT_LOADS if loads is None else loads
-    fleet = wm.DEFAULT_GEN_FLEET if gen_fleet is None else gen_fleet
+    loads = _case().loads if loads is None else loads
+    fleet = _case().gen_fleet if gen_fleet is None else gen_fleet
     if kind not in ("auto", "gap", "elap"):
         raise ValueError(f"unknown hub kind {kind!r} (use 'auto', 'gap' or 'elap')")
     out = {}
@@ -1210,7 +1274,7 @@ def hub_congestion_decomposition(fp, res, pt, weights=None, loads=None):
     ``weights`` defaults to `hub_weights(fp, 'auto', loads)`. Returns a DataFrame
     with one column per area plus ``Transfer (hub-to-hub)`` and ``TOTAL``; the TOTAL of
     the congestion row equals the collected ``R + R_T`` (conservation check row)."""
-    loads = wm.DEFAULT_LOADS if loads is None else loads
+    loads = _case().loads if loads is None else loads
     weights = hub_weights(fp, "auto", loads) if weights is None else weights
     p = {b: res.gen_by_bus.get(b, 0.0)
             - (float(loads.get(b, 0.0)) - res.shed_by_bus.get(b, 0.0))
@@ -1261,7 +1325,7 @@ def congestion_summary(fp, res, pt, allocations=None, loads=None, cost=None):
     ``N_a^c`` (what a region's prices create) is the natural benchmark; each ``Allocated`` row is a
     rule's answer for how much of R that region keeps. Returns a rounded DataFrame.
     """
-    loads = wm.DEFAULT_LOADS if loads is None else loads
+    loads = _case().loads if loads is None else loads
     cost = cost_by_bus() if cost is None else cost
     rc = regional_congestion(fp, res, pt, loads)
     p = {b: res.gen_by_bus.get(b, 0.0) - (float(loads.get(b, 0.0)) - res.shed_by_bus.get(b, 0.0))
@@ -1308,10 +1372,10 @@ def loop_flow_triangle(fp, ratings, host, nbr, *, gen_fleet=None, loads=None,
     one scarcity, which is the clean case for a "no one pays anyone" netting. Returns
     ``(df, summary)``: ``df`` is the three-claim table ($/h); ``summary`` carries the common value,
     ``R``, and per-binding-line ``mu`` / ``F_host`` / ``F_nbr``."""
-    loads = wm.DEFAULT_LOADS if loads is None else loads
+    loads = _case().loads if loads is None else loads
     cost = cost_by_bus(gen_fleet) if cost is None else cost
-    net = wm.build_network(ratings or {}); pt = compute_ptdf(net, slack_bus="1")
-    res = solve_engine_dispatch(pt, wm.make_engine("UNIFIED", buses=pt.buses,
+    pt = _cn(ratings or {}).pt
+    res = solve_engine_dispatch(pt, _case().make_engine("UNIFIED", buses=pt.buses,
                                 gen_fleet=gen_fleet, loads=loads), shed_price=shed_price)
     lam = float(res.energy_price)
     p = {b: res.gen_by_bus.get(b, 0.0) - (float(loads.get(b, 0.0)) - res.shed_by_bus.get(b, 0.0))
@@ -1326,8 +1390,8 @@ def loop_flow_triangle(fp, ratings, host, nbr, *, gen_fleet=None, loads=None,
     for m in binding:                                     # give the host the capacity the nbr consumed
         s = float(pt.s_nom[pt.line_idx[m]])
         relaxed[m] = s + F_nbr[m] * (1.0 if (F_host[m] + F_nbr[m]) >= 0 else -1.0)
-    net2 = wm.build_network(relaxed); pt2 = compute_ptdf(net2, slack_bus="1")
-    res2 = solve_engine_dispatch(pt2, wm.make_engine("UNIFIED", buses=pt2.buses,
+    pt2 = _cn(relaxed).pt
+    res2 = solve_engine_dispatch(pt2, _case().make_engine("UNIFIED", buses=pt2.buses,
                                  gen_fleet=gen_fleet, loads=loads), shed_price=shed_price)
     PC = lambda r, p_: sum(cost.get(b, 0.0) * r.gen_by_bus.get(b, 0.0) for b in p_.buses)
     leg_rd = PC(res, pt) - PC(res2, pt2)
@@ -1368,9 +1432,9 @@ def rights_makewhole(fp, ratings, rights, *, redispatch, gen_fleet=None, loads=N
     Returns a DataFrame indexed by ``(method, area)`` with the owed hedge, the methodology's
     allocation, the avoided redispatch, and the two whole/short verdicts -- the ledger that shows
     when coordination's efficiency saving, not the rent, is what funds the firm right."""
-    loads = wm.DEFAULT_LOADS if loads is None else loads
-    pt = compute_ptdf(wm.build_network(ratings or {}), slack_bus="1")
-    res = solve_engine_dispatch(pt, wm.make_engine("UNIFIED", buses=pt.buses,
+    loads = _case().loads if loads is None else loads
+    pt = _cn(ratings or {}).pt
+    res = solve_engine_dispatch(pt, _case().make_engine("UNIFIED", buses=pt.buses,
                                 gen_fleet=gen_fleet, loads=loads), shed_price=shed_price)
     lmp = res.lmp
     owed = {a: 0.0 for a in fp.names}
@@ -1465,7 +1529,7 @@ def methodology_ledger_congestion(fp, alloc, indep, resU, pt, *, loads=None, cos
     beside each methodology's allocation is the benefit-commensurability comparison. ``alloc``
     is the ``{ba: $}`` allocation; ``pt`` the PTDF used for ``N_a^c``. Pass ``gen_fleet``
     with a non-default fleet (the hub weights are generation-weighted)."""
-    loads = wm.DEFAULT_LOADS if loads is None else loads
+    loads = _case().loads if loads is None else loads
     return _fold_congestion(methodology_ledger(fp, alloc, indep, resU, loads, cost),
                             fp, resU, pt, loads, gen_fleet=gen_fleet)
 
@@ -1489,7 +1553,7 @@ def methodology_ledger_4p(fp, indep, resU, *, makewhole, path_hedge, uplift,
     ``(ledger, summary)`` with the autarky and coordination positions, the change,
     and a Pareto flag per (BA, party).
     """
-    loads = wm.DEFAULT_LOADS if loads is None else loads
+    loads = _case().loads if loads is None else loads
     data, R = {}, 0.0
     for a in fp.names:
         La, Ra, PCa = _agg(fp, indep[a], a, loads, cost)
@@ -1532,8 +1596,8 @@ def bilateral_self_solve(fp, area, ratings=None, *, gen_fleet=None, loads=None,
     import bilateral as bl
     from types import SimpleNamespace
     fleet = fleet_with_backstop() if gen_fleet is None else gen_fleet
-    loads = wm.DEFAULT_LOADS if loads is None else loads
-    pt = compute_ptdf(wm.build_network(ratings or {}), slack_bus="1")
+    loads = _case().loads if loads is None else loads
+    pt = _cn(ratings or {}).pt
     buses = set(fp.defs[area])
     mon = [l for l in pt.lines if fp.line_assign.get(l) == area]
     sup = [bl.Supplier(g, s["bus"], s["cost"], s["p_nom"])
@@ -1576,8 +1640,8 @@ def pre_market_bilateral(fp, ratings=None, *, gen_fleet=None, loads=None, voll=2
     """
     import bilateral as bl
     fleet = fleet_with_backstop() if gen_fleet is None else gen_fleet
-    loads = wm.DEFAULT_LOADS if loads is None else loads
-    pt = compute_ptdf(wm.build_network(ratings or {}), slack_bus="1")
+    loads = _case().loads if loads is None else loads
+    pt = _cn(ratings or {}).pt
     sup = [bl.Supplier(g, s["bus"], s["cost"], s["p_nom"]) for g, s in fleet.items()]
     cost = {str(s["bus"]): float(s["cost"]) for s in fleet.values()}
     cap = {str(s["bus"]): float(s["p_nom"]) for s in fleet.values()}
@@ -1727,7 +1791,7 @@ def parallel_flow_attribution(fp, res, pt, loads=None):
     -- the congestion at the centre of the hold-harmless dispute. Returns a tidy
     table over the binding lines (one column pair per BA plus the Transfer pair).
     """
-    loads = wm.DEFAULT_LOADS if loads is None else loads
+    loads = _case().loads if loads is None else loads
     weights = hub_weights(fp, "auto", loads)
     p = {b: res.gen_by_bus.get(b, 0.0) - float(loads.get(b, 0.0)) for b in pt.buses}
     E_a = {ba: sum(p[b] for b in fp.defs[ba]) for ba in fp.names}
@@ -1771,7 +1835,7 @@ def loop_flow_charge(fp, res, pt, host, nbr, loads=None):
     host's marginal redispatch cost. It is SIGNED: negative in an interval whose neighbour
     flow relieves the constraint. Returns 0.0 when no host-internal line binds.
     """
-    loads = wm.DEFAULT_LOADS if loads is None else loads
+    loads = _case().loads if loads is None else loads
     weights = hub_weights(fp, "auto", loads)
     p = {b: res.gen_by_bus.get(b, 0.0) - float(loads.get(b, 0.0)) for b in pt.buses}
     host_buses, nbr_buses = set(fp.defs[host]), fp.defs[nbr]
@@ -1816,11 +1880,11 @@ def path_hedge_ledger(fp, ratings, rights, *, gen_fleet=None, loads=None,
     funded, shortfall) and ``summary`` carries ``R``, the per-tier totals, the
     waterfall, the SFT verdict, and a per-right ``honored`` flag for the figure.
     """
-    loads = wm.DEFAULT_LOADS if loads is None else loads
-    net = wm.build_network(ratings or {})
-    pt = compute_ptdf(net, slack_bus="1")
+    loads = _case().loads if loads is None else loads
+    _c = _cn(ratings or {})
+    net, pt = _c.network, _c.pt
     res = solve_engine_dispatch(
-        pt, wm.make_engine("UNIFIED", buses=pt.buses, gen_fleet=gen_fleet, loads=loads),
+        pt, _case().make_engine("UNIFIED", buses=pt.buses, gen_fleet=gen_fleet, loads=loads),
         shed_price=shed_price)
     R = sum(abs(res.line_dual[l]) * abs(res.flow_own[l]) for l in pt.lines)
 
@@ -1882,8 +1946,8 @@ def position_ledger(fp, res, gen_fleet=None, loads=None, *, trader=0.0,
 
     Positions sum to −(production cost). Returns ``{(footprint, role): $/h}``.
     """
-    fleet = wm.DEFAULT_GEN_FLEET if gen_fleet is None else gen_fleet
-    loads = wm.DEFAULT_LOADS if loads is None else loads
+    fleet = _case().gen_fleet if gen_fleet is None else gen_fleet
+    loads = _case().loads if loads is None else loads
     out = {}
     for m, buses in fp.defs.items():
         loads_m = {b: loads[b] for b in buses if b in loads}
@@ -1986,8 +2050,8 @@ def coalition_positions(fp, pt, host, *, gen_fleet=None, loads=None, curves=None
     the shedding area's consumers at the shed price, so an infeasible-but-shedding
     baseline does not read as cheap.
     """
-    fleet = wm.DEFAULT_GEN_FLEET if gen_fleet is None else gen_fleet
-    base_loads = wm.DEFAULT_LOADS if loads is None else loads
+    fleet = _case().gen_fleet if gen_fleet is None else gen_fleet
+    base_loads = _case().loads if loads is None else loads
     loads_s = {b: float((load or {}).get(b, mw)) for b, mw in base_loads.items()}
     cost_s = {g: float((cost or {}).get(g, spec["cost"])) for g, spec in fleet.items()}
     fleet_s = {g: {**spec, "cost": cost_s[g]} for g, spec in fleet.items()}
@@ -2005,7 +2069,7 @@ def coalition_positions(fp, pt, host, *, gen_fleet=None, loads=None, curves=None
         if a == host:
             continue
         act = [l for l in pt.lines if fp.line_assign.get(l) == a]
-        base[a] = _solve(wm.make_engine(a, fp.defs[a], gen_fleet=fleet_s, loads=loads_s,
+        base[a] = _solve(_case().make_engine(a, fp.defs[a], gen_fleet=fleet_s, loads=loads_s,
                                         activated=act))
         for b in fp.defs[a]:
             v = (base[a].gen_by_bus.get(b, 0.0) - loads_s.get(b, 0.0)
@@ -2013,10 +2077,10 @@ def coalition_positions(fp, pt, host, *, gen_fleet=None, loads=None, curves=None
             if abs(v) > 1e-9:
                 exo[b] = exo.get(b, 0.0) + v
     act_h = [l for l in pt.lines if fp.line_assign.get(l) == host]
-    base[host] = _solve(wm.make_engine(host, fp.defs[host], gen_fleet=fleet_s, loads=loads_s,
-                                       activated=act_h), exo=exo)
+    base[host] = _solve(_case().make_engine(host, fp.defs[host], gen_fleet=fleet_s,
+                                            loads=loads_s, activated=act_h), exo=exo)
 
-    eng_u = wm.make_engine("UNIFIED", buses=pt.buses, gen_fleet=fleet_s, loads=loads_s)
+    eng_u = _case().make_engine("UNIFIED", buses=pt.buses, gen_fleet=fleet_s, loads=loads_s)
     if transfer_limits is None:
         resU = _solve(eng_u)
     else:
@@ -2032,7 +2096,7 @@ def coalition_positions(fp, pt, host, *, gen_fleet=None, loads=None, curves=None
                                       shed_price=shed_price)
     alloc, summ, _, _ = allocate_congestion_rent(fp, resU, pt, loads_s, te_split=te_split,
                                                  gen_fleet=fleet)
-    # Method 1 stops at the wire rent R; each binding interface's scheduling
+    # Method 1 stops at the line rent R; each binding interface's scheduling
     # rent is credited half to each party so both methods allocate R + R_T.
     rt_half = {a: 0.0 for a in fp.names}
     for (x, y), v in transfer_rent_by_interface(resU).items():
@@ -2154,6 +2218,7 @@ def pareto_verdicts(ledger):
 
 if __name__ == "__main__":
     import footprints as fpmod
+    import wscc9_model as wm   # the smoke test IS the 9-bus case, explicitly
 
     pt = wm.shift_factors()
     fp = fpmod.make(pt, {"BA-1": ["2", "8", "7", "6", "3"], "BA-2": ["1", "9", "4", "5"]},
@@ -2166,7 +2231,7 @@ if __name__ == "__main__":
     ptB = compute_ptdf(netB, slack_bus="1")
     resU = solve_engine_dispatch(ptB, wm.make_engine("UNIFIED", buses=ptB.buses))
     _, indep = independent_clear(fp, SCN, shed_price=150.0)
-    alloc, summ, _, _ = allocate_congestion_rent(fp, resU, ptB, wm.DEFAULT_LOADS)
+    alloc, summ, _, _ = allocate_congestion_rent(fp, resU, ptB, wm.CASE.loads)
     print(f"congestion rent R = ${summ['R']:.1f}/h ; tau = ${summ['tau']:.1f}")
     av = autarky_vs_unified(fp, 1, alloc, indep, resU)
     fin = av.loc["Final position"]

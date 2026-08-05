@@ -58,11 +58,29 @@ class Footprints:
     ties: list                      # cross-footprint lines
     tie_label: str                  # 'tie' (BA) or 'seam' (market)
     bus_to_fp: dict = field(default_factory=dict)
+    # Two-level partition (the WECC structure): BA AREAS nest inside
+    # market-engine FOOTPRINTS. Empty ⇒ areas == footprints (today's collapse).
+    sub: dict = field(default_factory=dict)         # {footprint: [area, ...]}
+    area_defs: dict = field(default_factory=dict)   # {area: [bus strings]}
 
     # ── bus → footprint ──────────────────────────────────────────────────
     def fp_of(self, bus):
         """Footprint owning ``bus`` (``None`` if it sits outside every footprint)."""
         return self.bus_to_fp.get(str(bus))
+
+    # ── the finer (BA-area) partition ────────────────────────────────────
+    def areas_of(self, name=None) -> dict:
+        """The BA-area partition: ``{area: [buses]}``.
+
+        With no two-level structure declared this is ``defs`` — the footprints
+        themselves, so the accounting overlay and the engine partition coincide
+        (the 9-bus reading). With ``area_defs`` set it is the finer partition;
+        ``name`` restricts to the areas nested inside one footprint."""
+        if not self.area_defs:
+            return dict(self.defs) if name is None else {name: self.defs[name]}
+        if name is None:
+            return dict(self.area_defs)
+        return {a: self.area_defs[a] for a in self.sub.get(name, [])}
 
     # ── line classification ──────────────────────────────────────────────
     def line_kind(self, pt, l):
@@ -105,6 +123,8 @@ def make(
     manage: dict | None = None,
     monitored: dict | None = None,
     tie_label: str = "tie",
+    sub: dict | None = None,
+    area_defs: dict | None = None,
 ) -> Footprints:
     """Build a :class:`Footprints` from bus definitions + the network topology.
 
@@ -151,10 +171,30 @@ def make(
             return ms[0] if len(ms) == 1 else None
         line_assign = {l: _single(l) for l in pt.lines}
 
+    # Two-level structure (optional): validate that the declared areas tile
+    # each footprint's bus set exactly, so the BA overlay and the engine
+    # partition can never disagree about a bus.
+    sub = {str(k): [str(a) for a in v] for k, v in (sub or {}).items()}
+    area_defs = {str(a): [str(b) for b in bs] for a, bs in (area_defs or {}).items()}
+    if bool(sub) != bool(area_defs):
+        raise ValueError("sub= and area_defs= must be given together")
+    if sub:
+        for name in defs:
+            fp_buses = {str(b) for b in defs[name]}
+            area_buses: set = set()
+            for a in sub.get(name, []):
+                area_buses |= set(area_defs[a])
+            if area_buses != fp_buses:
+                raise ValueError(
+                    f"areas of footprint {name!r} do not tile its buses "
+                    f"(missing {sorted(fp_buses - area_buses)}, "
+                    f"extra {sorted(area_buses - fp_buses)})")
+
     fp = Footprints(
         names=names, defs={k: [str(b) for b in v] for k, v in defs.items()},
         colors=dict(colors), line_assign=line_assign, monitored=monitored,
         areas={}, ties=[], tie_label=tie_label, bus_to_fp=bus_to_fp,
+        sub=sub, area_defs=area_defs,
     )
 
     # ties (topological) + settlement areas (+ a Non-market area if needed)

@@ -64,6 +64,44 @@ def _monitored_idx(pt, monitored) -> list[int]:
     return [pt.line_idx[str(l)] for l in monitored]
 
 
+def _fgset(monitored):
+    """``monitored`` as a ``seams_engine.FlowgateSet`` — or None if it names
+    lines. Duck-typed so this module keeps no import on the engine: in the
+    West the RATED PATH is the flowgate, so the ATC/TTC/SFT machinery accepts
+    the same constraint object the solvers enforce (MOD-029 rates each path
+    alone; the SFT over the flowgate union is the holistic check it skips)."""
+    return monitored if (hasattr(monitored, "S") and hasattr(monitored, "ids")
+                         and hasattr(monitored, "fwd")) else None
+
+
+def _ttc_over(pt, a, monitored, tol):
+    """``min cap/|a|`` over the monitored constraint set for a per-line loading
+    vector ``a``. Per-line path: the original loop, op for op. Flowgate path:
+    the loading of flowgate k is ``(S·a)_k`` and the cap is direction-aware
+    (``fwd`` when the transfer loads it forward, ``rev`` when backward — an
+    unrated direction's large sentinel never binds)."""
+    fgs = _fgset(monitored)
+    if fgs is not None:
+        af = fgs.S @ a
+        best_mw, best_id = np.inf, None
+        for r in range(fgs.n_fg):
+            if abs(af[r]) < tol:
+                continue
+            cap = float(fgs.fwd[r] if af[r] > 0 else fgs.rev[r])
+            lim = cap / abs(af[r])
+            if lim < best_mw:
+                best_mw, best_id = lim, fgs.ids[r]
+        return float(best_mw), best_id
+    best_mw, best_line = np.inf, None
+    for l in _monitored_idx(pt, monitored):
+        if abs(a[l]) < tol:
+            continue
+        lim = pt.s_nom[l] / abs(a[l])
+        if lim < best_mw:
+            best_mw, best_line = lim, pt.lines[l]
+    return float(best_mw), best_line
+
+
 # ──────────────────────────────────────────────────────────────────────────
 # Path shift factors, TTC, the ATC identity
 # ──────────────────────────────────────────────────────────────────────────
@@ -84,14 +122,7 @@ def ttc(pt, source, sink, monitored="all", tol: float = 1e-6) -> tuple[float, st
     ``(mw, binding_line_name)``.
     """
     a = path_shift_factors(pt, source, sink)
-    best_mw, best_line = np.inf, None
-    for l in _monitored_idx(pt, monitored):
-        if abs(a[l]) < tol:
-            continue
-        lim = pt.s_nom[l] / abs(a[l])
-        if lim < best_mw:
-            best_mw, best_line = lim, pt.lines[l]
-    return float(best_mw), best_line
+    return _ttc_over(pt, a, monitored, tol)
 
 
 def atc(ttc_mw: float, etc: float = 0.0, trm: float = 0.0, cbm: float = 0.0) -> float:
@@ -144,14 +175,7 @@ def interface_ttc(pt, interfaces, weights, monitored="all", tol: float = 1e-6):
     for k in interfaces:
         a, b = sorted((str(k[0]), str(k[1])))
         sf = hub_path_shift_factors(pt, weights[a], weights[b])
-        best_mw, best_line = np.inf, None
-        for l in _monitored_idx(pt, monitored):
-            if abs(sf[l]) < tol:
-                continue
-            lim = pt.s_nom[l] / abs(sf[l])
-            if lim < best_mw:
-                best_mw, best_line = lim, pt.lines[l]
-        out[(a, b)] = (float(best_mw), best_line)
+        out[(a, b)] = _ttc_over(pt, sf, monitored, tol)
     return out
 
 
@@ -175,6 +199,29 @@ def interface_sft(pt, ratings, weights, monitored="all", direction="worst"):
     fraction, overloaded)."""
     if direction not in ("sorted", "worst"):
         raise ValueError("direction must be 'sorted' or 'worst'")
+    fgs = _fgset(monitored)
+    if fgs is not None:
+        # Superpose at the FLOWGATE level: each rating's absolute flowgate
+        # loading (worst) or its signed loading (sorted), against fwd/rev.
+        cf = np.zeros(fgs.n_fg)
+        for k, v in ratings.items():
+            a, b = sorted((str(k[0]), str(k[1])))
+            mw = float(v[0] if isinstance(v, (tuple, list)) else v)
+            fc = fgs.S @ (mw * hub_path_shift_factors(pt, weights[a], weights[b]))
+            cf += np.abs(fc) if direction == "worst" else fc
+        rows = []
+        for r in range(fgs.n_fg):
+            f = float(cf[r])
+            if direction == "worst":
+                cap = float(min(fgs.fwd[r], fgs.rev[r]))   # must stand either way
+                over = f > cap + 1e-6
+            else:
+                cap = float(fgs.fwd[r] if f >= 0 else fgs.rev[r])
+                over = f > float(fgs.fwd[r]) + 1e-6 or f < -float(fgs.rev[r]) - 1e-6
+            rows.append(dict(line=fgs.ids[r], flow=f, rating=cap,
+                             loading=abs(f) / cap if cap > 0 else np.inf,
+                             overloaded=over))
+        return pd.DataFrame(rows).set_index("line")
     flow = np.zeros(pt.n_line)
     for k, v in ratings.items():
         a, b = sorted((str(k[0]), str(k[1])))
@@ -228,6 +275,21 @@ def line_loadings(pt, awards, monitored="all") -> pd.DataFrame:
     the network figures.
     """
     f = superposed_flow(pt, awards)
+    fgs = _fgset(monitored)
+    if fgs is not None:
+        cf = fgs.S @ f
+        rows = []
+        for r in range(fgs.n_fg):
+            flow = float(cf[r])
+            cap = float(fgs.fwd[r] if flow >= 0 else fgs.rev[r])
+            rows.append({
+                "line": fgs.ids[r], "from": "", "to": "",
+                "flow": round(flow, 1), "limit": round(cap, 0),
+                "loading_%": round(100 * abs(flow) / cap, 0) if cap > 0 else np.inf,
+                "overload": (flow > float(fgs.fwd[r]) + 1e-6
+                             or flow < -float(fgs.rev[r]) - 1e-6),
+            })
+        return pd.DataFrame(rows).set_index("line")
     idx = _monitored_idx(pt, monitored)
     rows = []
     for l in idx:
@@ -270,6 +332,33 @@ def firm_line_loadings(pt, awards, monitored="all") -> pd.DataFrame:
     Columns: ``from``/``to``, ``fwd``/``rev`` directional sums, ``firm`` loading, ``limit``,
     ``loading_%`` (firm vs limit), ``overload`` (``firm > limit``).
     """
+    fgs = _fgset(monitored)
+    if fgs is not None:
+        # Firm reading at the FLOWGATE level: each award's signed flowgate
+        # loading, same-direction sums, no counterflow credit. The forward sum
+        # tests against fwd_k, the reverse sum against rev_k (asymmetric
+        # ratings keep their own directions; an unrated side never binds).
+        per = []
+        for a in awards:
+            a = _as_award(a)
+            per.append(fgs.S @ (a.mw * path_shift_factors(pt, a.source, a.sink)))
+        rows = []
+        for r in range(fgs.n_fg):
+            vals = [float(p[r]) for p in per]
+            fwd_sum = sum(v for v in vals if v > 0)
+            rev_sum = sum(-v for v in vals if v < 0)
+            over = (fwd_sum > float(fgs.fwd[r]) + 1e-6
+                    or rev_sum > float(fgs.rev[r]) + 1e-6)
+            cap = float(fgs.fwd[r] if fwd_sum >= rev_sum else fgs.rev[r])
+            firm = max(fwd_sum, rev_sum)
+            rows.append({
+                "line": fgs.ids[r], "from": "", "to": "",
+                "fwd": round(fwd_sum, 1), "rev": round(rev_sum, 1),
+                "firm": round(firm, 1), "limit": round(cap, 0),
+                "loading_%": round(100 * firm / cap, 0) if cap > 0 else np.inf,
+                "overload": over,
+            })
+        return pd.DataFrame(rows).set_index("line")
     idx = _monitored_idx(pt, monitored)
     contrib = {l: [] for l in idx}
     for a in awards:

@@ -34,9 +34,39 @@ import matplotlib.patches as mpatches
 import nodal_plot
 from nodal_plot import plot_combined_letter, compute_ptdf_flows, plot_network_topology
 from seams_engine import (
+    active as _case,
     to_supply_demand, susceptance_widths, shed_segments, served_demand,
 )
-from wscc9_model import BUS_COLORS, COORDS, RING_ORDER, CENTER_BUS
+
+# Drawing-layout defaults now resolve through the ambient case at CALL time
+# (they used to be imported from wscc9_model at module import, which welded this
+# module to the 9-bus case). Every public function still accepts explicit
+# bus_colors= / bus_coords= / ring_order= / center_bus= overrides.
+
+
+def _BUS_COLORS() -> dict:
+    return _case().bus_colors
+
+
+def _COORDS() -> dict:
+    return _case().coords
+
+
+def _RING_ORDER() -> list:
+    return _case().ring_order
+
+
+def _CENTER_BUS() -> str:
+    return _case().center_bus
+
+
+def __getattr__(name):
+    """PEP 562: keep ``wscc9_figures.BUS_COLORS``-style access working."""
+    lazies = {"BUS_COLORS": _BUS_COLORS, "COORDS": _COORDS,
+              "RING_ORDER": _RING_ORDER, "CENTER_BUS": _CENTER_BUS}
+    if name in lazies:
+        return lazies[name]()
+    raise AttributeError(name)
 
 #: Tier colours for sold transmission rights drawn on the network.
 RIGHT_TIER_COLORS = {"inter": "#117A65", "intra": "#B9770E"}
@@ -53,6 +83,7 @@ def footprint_figure(
     bus_colors=None, demand_segments=None, shed=True, legend_note=None, suptitle=None,
     annotate_roles=True, axis_key=True,
     node_net_mw=None, network_show_lmp=None,
+    line_flows=None, constrained_lines=None, bus_lmps=None,
     bus_coords=None, ring_order=None, center_bus=None,
     curves=None,
     title_left="Network -- DC power flow",
@@ -97,6 +128,16 @@ def footprint_figure(
         Whether the NETWORK panel prints the bus LMP. Default ``True`` unless
         ``node_net_mw`` is given (then ``False``). The dispatch ring always keeps
         its LMP labels.
+    line_flows : dict, optional
+        ``{line: MW}`` drawn on the network panel instead of the clearing's own
+        ``res.flow_own``. Use for a STUDY view, where the market draws its own
+        book superposed on a proxy of the neighbour's.
+    constrained_lines : iterable, optional
+        Lines drawn red instead of the clearing's binding set (``res.line_dual``).
+        Pairs with ``line_flows``: a studied line can be flagged without any dual.
+    bus_lmps : dict, optional
+        ``{bus: $/MWh}`` instead of ``res.lmp`` -- e.g. each footprint priced by
+        its own clearing when two books are drawn on one ring.
     """
     if curves:                              # attach rising MC curves so the ring draws each
         for _g in engine.gens:              # dispatched unit as a sloped WEDGE (a + b*g), not a
@@ -152,7 +193,7 @@ def footprint_figure(
     else:
         dim = set()
 
-    colors = dict(BUS_COLORS if bus_colors is None else bus_colors)
+    colors = dict(_BUS_COLORS() if bus_colors is None else bus_colors)
     for b in dim:
         colors[b] = _DIM
 
@@ -167,13 +208,18 @@ def footprint_figure(
             lcolors[l] = _DIM
 
     gcolors = {name: (_DIM if name in dim_fps else fp.colors[name]) for name in fp.names}
-    binding = {l for l, mu in res.line_dual.items() if abs(mu) > 1e-3}
+    if constrained_lines is not None:
+        binding = {str(l) for l in constrained_lines}
+    else:
+        binding = {l for l, mu in res.line_dual.items() if abs(mu) > 1e-3}
 
     fig, (ax_net, ax_circ) = plot_combined_letter(
         net, sup, dem,
-        bus_colors=colors, bus_lmps=res.lmp, dim_buses=dim,
+        bus_colors=colors, dim_buses=dim,
+        bus_lmps=dict(res.lmp) if bus_lmps is None else {str(k): float(v) for k, v in bus_lmps.items()},
         bus_net_mw=bus_net, network_show_lmp=network_show_lmp,
-        line_flows={l: res.flow_own[l] for l in pt.lines},
+        line_flows=({l: res.flow_own[l] for l in pt.lines} if line_flows is None
+                    else {str(k): float(v) for k, v in line_flows.items()}),
         line_widths=susceptance_widths(pt), line_colors=lcolors,
         constrained_lines=binding,
         flows=flows,
@@ -183,14 +229,14 @@ def footprint_figure(
         show_group_labels=False,
         annotate_roles=annotate_roles, axis_key=axis_key,
         all_buses=pt.buses,
-        sector_order=ring_order if ring_order is not None else RING_ORDER,
-        bus_coords=bus_coords if bus_coords is not None else COORDS,
-        center_bus=center_bus if center_bus is not None else CENTER_BUS,
+        sector_order=ring_order if ring_order is not None else _RING_ORDER(),
+        bus_coords=bus_coords if bus_coords is not None else _COORDS(),
+        center_bus=center_bus if center_bus is not None else _CENTER_BUS(),
         title_left=title_left, title_right=title_right, suptitle=suptitle,
         figsize=figsize, panel_ratios=panel_ratios,
     )
 
-    _coords = bus_coords if bus_coords is not None else COORDS
+    _coords = bus_coords if bus_coords is not None else _COORDS()
     _exo = (exo_sched or {}) if exo_annotate else {}   # exo_annotate=False keeps the ring wedge, drops the network label
     # A balanced source/sink pair (two entries) would stack two labels above adjacent
     # buses; separate them horizontally and shorten the text. A single entry keeps the
@@ -333,7 +379,7 @@ def self_schedule_bars(engine, res, source=None, sink=None, mw=0.0, *,
                        add_sink_demand=True, color=_SELFSCHED):
     """Build ``(sup_dem, demand_segments)`` that draw a price-taking self-schedule as a
     distinct grey block — the single, shared convention across the series (101's one-sided
-    injection, 201's balanced gen→load, 202's cross-market trade), cleaner than the
+    injection, 201's balanced gen→load, 205's cross-market trade), cleaner than the
     automatic ``exo_sched`` wedge. Pass the returned ``sup_dem`` / ``demand_segments``
     straight to :func:`footprint_figure` / :func:`transfer_figure` (they take over the
     bars, so drop ``exo_sched`` on the ring; the network panel's net-MW labels come from
@@ -404,7 +450,7 @@ def draw_rights_arcs(ax, rights, coords=None, *, tier_colors=None, rad=0.22,
     import numpy as np
     from matplotlib.patches import FancyArrowPatch
 
-    coords = COORDS if coords is None else coords
+    coords = _COORDS() if coords is None else coords
     tcol = RIGHT_TIER_COLORS if tier_colors is None else tier_colors
     for ri, r in enumerate(rights):
         s, k, mw = str(r["source"]), str(r["sink"]), float(r["mw"])
@@ -470,7 +516,7 @@ def rights_figure(net, pt, rights, *, fp=None, ties=None, coords=None,
     # Line WIDTH encodes susceptance b_m = 1/x_m (the 101 convention): a wider line is more
     # "slippery", so it wants more of any given flow -- the intuition for parallel flow.
     line_widths = susceptance_widths(pt) if line_widths is None else line_widths
-    coords = COORDS if coords is None else coords
+    coords = _COORDS() if coords is None else coords
     tielist = list(ties) if ties is not None else (list(fp.ties) if fp is not None else [])
     tcol = RIGHT_TIER_COLORS if tier_colors is None else tier_colors
     aw = [atc.Award(r["source"], r["sink"], r["mw"]) for r in rights]
@@ -493,7 +539,7 @@ def rights_figure(net, pt, rights, *, fp=None, ties=None, coords=None,
     # flow/limit, red where the SFT fails); the rights are arcs labelled by path
     # only -- the MW / ATC live in the table on the right.
     plot_network_topology(
-        net, bus_colors=BUS_COLORS if bus_colors is None else bus_colors, bus_coords=coords,
+        net, bus_colors=_BUS_COLORS() if bus_colors is None else bus_colors, bus_coords=coords,
         supply_by_bus=supply_by_bus, demand_by_bus=demand_by_bus, bus_net_mw=bus_net_mw,
         lmp_only=bus_net_mw is not None,
         line_flows=atc.flow_dict(pt, aw), line_colors=lcolors, line_widths=line_widths,
@@ -568,7 +614,7 @@ def rights_payoff_figure(net, pt, rights, res, *, fp=None, coords=None,
     import matplotlib.pyplot as plt
     from seams_engine import susceptance_widths
 
-    coords = COORDS if coords is None else coords
+    coords = _COORDS() if coords is None else coords
     line_widths = susceptance_widths(pt) if line_widths is None else line_widths
     tcol = RIGHT_TIER_COLORS if tier_colors is None else tier_colors
     lmp = res.lmp
@@ -588,7 +634,7 @@ def rights_payoff_figure(net, pt, rights, res, *, fp=None, coords=None,
     # left: the priced network -- nodal LMPs + the unified dispatch flows, with the
     # rights as POR->POD arcs on top (binding lines red).
     plot_network_topology(
-        net, bus_colors=BUS_COLORS if bus_colors is None else bus_colors,
+        net, bus_colors=_BUS_COLORS() if bus_colors is None else bus_colors,
         bus_coords=coords, bus_lmps=lmp,
         supply_by_bus=supply_by_bus, demand_by_bus=demand_by_bus, bus_net_mw=bus_net_mw,
         lmp_only=bus_net_mw is not None,

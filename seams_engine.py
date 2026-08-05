@@ -79,14 +79,47 @@ class PTDFData:
         return p
 
 
-def compute_ptdf(network, slack_bus: str = "1") -> PTDFData:
+def _bus_sort_key(b) -> tuple:
+    """Sort key for bus names: numeric names sort NUMERICALLY (all-digit names
+    like the 9-bus case's "1".."9" keep exactly the permutation the old
+    ``int(x)`` sort produced), non-numeric names (e.g. WECC's "st_1694_230")
+    sort lexicographically after every numeric one."""
+    s = str(b)
+    return (0, int(s), "") if s.lstrip("-").isdigit() else (1, 0, s)
+
+
+def compute_ptdf(network, slack_bus: str | None = None, method: str = "auto",
+                 bus_order: list | None = None) -> PTDFData:
     """Build the DC shift-factor matrix from a PyPSA network.
 
     Uses line reactances (``x_pu_eff`` / ``x``) and the standard reduced-
     susceptance inversion with one slack bus. The PTDF distribution depends only
     on *relative* reactances, so the per-unit/ohm convention is immaterial here.
+
+    Parameters
+    ----------
+    method : "auto" | "dense" | "sparse"
+        ``dense`` is the original full matrix inverse; ``sparse`` factorises the
+        reduced susceptance matrix with SuperLU and back-solves one RHS per bus
+        (the WECC map-mirror's 1883-node case factorises in milliseconds where
+        the dense inverse would be avoidable work). ``auto`` = dense below 200
+        buses — so the teaching case NEVER enters the new code path — else sparse.
+    bus_order : list, optional
+        Explicit bus ordering (a case may pin its own); default sorted by
+        :func:`_bus_sort_key`.
+
+    ``slack_bus=None`` resolves to the FIRST bus in sort order — on the 9-bus
+    case that is bus "1", exactly the old hardcoded default; a case with named
+    buses should always pass its own slack explicitly (``case.slack_bus``).
     """
-    buses = sorted(network.buses.index.tolist(), key=lambda x: int(x))
+    if bus_order is not None:
+        buses = [str(b) for b in bus_order]
+        assert set(buses) == set(map(str, network.buses.index)), \
+            "bus_order must be a permutation of the network's buses"
+    else:
+        buses = sorted(network.buses.index.tolist(), key=_bus_sort_key)
+    if slack_bus is None:
+        slack_bus = buses[0]           # 9-bus: "1", the old hardcoded default
     lines = network.lines
     n_bus, n_line = len(buses), len(lines)
     bus_idx = {b: i for i, b in enumerate(buses)}
@@ -106,15 +139,40 @@ def compute_ptdf(network, slack_bus: str = "1") -> PTDFData:
         line_buses.append((b0, b1))
         s_nom[li] = row["s_nom"]
 
-    B_bus = C.T @ np.diag(b_line) @ C
     s_i = bus_idx[slack_bus]
     keep = [i for i in range(n_bus) if i != s_i]
-    B_inv = np.linalg.inv(B_bus[np.ix_(keep, keep)])
-    B_inv_full = np.zeros((n_bus, n_bus))
-    for ii, i in enumerate(keep):
-        for jj, j in enumerate(keep):
-            B_inv_full[i, j] = B_inv[ii, jj]
-    ptdf = np.diag(b_line) @ C @ B_inv_full
+    resolved = method if method != "auto" else ("dense" if n_bus < 200 else "sparse")
+    if resolved == "dense":
+        # The original construction, untouched — the teaching case's numbers.
+        B_bus = C.T @ np.diag(b_line) @ C
+        B_inv = np.linalg.inv(B_bus[np.ix_(keep, keep)])
+        B_inv_full = np.zeros((n_bus, n_bus))
+        for ii, i in enumerate(keep):
+            for jj, j in enumerate(keep):
+                B_inv_full[i, j] = B_inv[ii, jj]
+        ptdf = np.diag(b_line) @ C @ B_inv_full
+    else:
+        # Sparse LU on the reduced susceptance matrix, one back-solve per line.
+        # PTDF row m = b_m · [B_red⁻¹ (e_{bus0(m)} − e_{bus1(m)})]ᵀ on the kept
+        # buses (B is symmetric). At the WECC map-mirror's 1883 nodes this
+        # factorises in milliseconds and back-solves ~0.2 ms/line.
+        import scipy.sparse as _sp
+        from scipy.sparse.linalg import factorized as _factorized
+
+        Cs = _sp.csr_matrix(C)
+        B_red = (Cs.T @ _sp.diags(b_line) @ Cs).tocsc()[keep][:, [
+            *keep]].tocsc()
+        solve = _factorized(B_red)
+        kpos = np.full(n_bus, -1)
+        kpos[keep] = np.arange(len(keep))
+        ptdf = np.zeros((n_line, n_bus))
+        for li in range(n_line):
+            rhs = np.zeros(len(keep))
+            for b, sgn in ((line_buses[li][0], 1.0), (line_buses[li][1], -1.0)):
+                j = bus_idx[b]
+                if j != s_i:
+                    rhs[kpos[j]] += sgn
+            ptdf[li, keep] = b_line[li] * solve(rhs)
 
     return PTDFData(
         ptdf=ptdf,
@@ -145,6 +203,73 @@ def susceptance_widths(
         return {pt.lines[i]: 0.5 * (wmin + wmax) for i in range(pt.n_line)}
     w = wmin + (b - lo) / (hi - lo) * (wmax - wmin)
     return {pt.lines[i]: float(w[i]) for i in range(pt.n_line)}
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Flowgates — signed linear combinations of line flows that carry limits
+# ──────────────────────────────────────────────────────────────────────────
+@dataclass
+class FlowgateSet:
+    """The activated constraint set as FLOWGATES: ``f_k = Σ_m S[k,m]·F_m`` with
+    ``−rev_k ≤ f_k ≤ fwd_k``.
+
+    A monitored LINE is the special case ``S = e_mᵀ`` with ``fwd = rev = s_nom``
+    (see :func:`identity_flowgates`) — so per-line limits and WECC rated paths
+    are one object, and the LMP identity survives verbatim: with the implied
+    per-line dual ``μ^impl = Sᵀ μ_fg``,
+
+        Σ_k H[k,n] μ_k  =  Σ_m SF_{n,m} μ^impl_m ,      H = S · PTDF,
+
+    so ``λ_n = λ̂_a + Σ_m SF_{n,m} μ_m`` holds on any case. A line inside a
+    binding flowgate inherits ``sign_m · μ_k``; a line in no binding flowgate
+    has ``μ^impl_m = 0``.
+
+    An unrated direction carries a large sentinel (the upstream western-seams
+    convention: a missing catalog reverse rating means UNRATED, never "equal to
+    forward" — constraining it would invent phantom reverse congestion rent).
+    """
+
+    ids: list[str]                     # flowgate names (== line names at S = I)
+    S: np.ndarray                      # (n_fg, n_line) signed membership
+    fwd: np.ndarray                    # (n_fg,) forward rating, MW
+    rev: np.ndarray                    # (n_fg,) reverse rating, MW (positive)
+    members: dict = field(default_factory=dict)   # {id: [(line, sign), ...]}
+    _H: np.ndarray | None = field(default=None, repr=False, compare=False)
+
+    @property
+    def n_fg(self) -> int:
+        return len(self.ids)
+
+    @property
+    def fg_idx(self) -> dict:
+        return {k: i for i, k in enumerate(self.ids)}
+
+    def H(self, pt: PTDFData) -> np.ndarray:
+        """(n_fg, n_bus) bus→flowgate shift factors ``H = S @ PTDF``; cached."""
+        if self._H is None:
+            object.__setattr__(self, "_H", np.asarray(self.S @ pt.ptdf))
+        return self._H
+
+    def implied_line_duals(self, fg_dual: dict) -> np.ndarray:
+        """``μ^impl = Sᵀ μ_fg`` — the per-line duals the flowgate duals imply."""
+        mu = np.zeros(self.n_fg)
+        idx = self.fg_idx
+        for k, v in fg_dual.items():
+            mu[idx[k]] = v
+        return self.S.T @ mu
+
+
+def identity_flowgates(pt: PTDFData, lines="all", s_max_pu: float = 1.0) -> FlowgateSet:
+    """Today's per-line constraint set as a ``FlowgateSet``: one flowgate per
+    monitored line, ``S`` a selection matrix, ``fwd = rev = s_nom``."""
+    idx = list(range(pt.n_line)) if lines == "all" else \
+        [pt.line_idx[str(l)] for l in lines]
+    S = np.zeros((len(idx), pt.n_line))
+    S[np.arange(len(idx)), idx] = 1.0
+    cap = pt.s_nom[idx] * float(s_max_pu)
+    return FlowgateSet(
+        ids=[pt.lines[i] for i in idx], S=S, fwd=cap.copy(), rev=cap.copy(),
+        members={pt.lines[i]: [(pt.lines[i], 1.0)] for i in idx})
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -196,6 +321,12 @@ class EngineResult:
     status: str
     shed_by_bus: dict[str, float] = field(default_factory=dict)  # u_n (unserved load; empty unless shed_price set)
     demand_cleared: dict[str, float] = field(default_factory=dict)  # price-sensitive demand bids: bid_id -> MW served
+    link_flow: dict[str, float] = field(default_factory=dict)    # DC-link transfers t_l (signed, bus0 -> bus1)
+    # Flowgate layer (populated when the solver is given a FlowgateSet; at
+    # S = I these coincide with line_dual / flow_own / (s_nom, s_nom)).
+    fg_dual: dict[str, float] = field(default_factory=dict)      # μ_k by flowgate id
+    fg_flow: dict[str, float] = field(default_factory=dict)      # f_k = Σ_m S[k,m] F_m
+    fg_limit: dict[str, tuple] = field(default_factory=dict)     # (fwd_k, rev_k)
     # EDAM-literal transfer form (solve_engine_transfers only; None otherwise)
     area_prices: dict | None = None          # λ̂_a — each area's balance dual
     transfers: dict | None = None            # {(a,b) sorted: net SCHEDULED t a→b, min-total-schedule tags}
@@ -210,6 +341,8 @@ def solve_engine_dispatch(
     flow_offsets: dict[str, float] | None = None,
     shed_price: float | None = None,
     demand_bids: list[dict] | None = None,
+    flowgates: FlowgateSet | None = None,
+    dc_links: dict[str, dict] | None = None,
 ) -> EngineResult:
     """Clear one engine's DC-OPF on the shared network.
 
@@ -258,6 +391,25 @@ def solve_engine_dispatch(
         ``demand_cleared`` keyed by ``id``; ``total_cost`` stays the supply
         production cost (the demand benefit is not netted in). Default ``None``
         adds no demand bids.
+    flowgates : FlowgateSet, optional
+        Enforce limits on FLOWGATES (signed sums of line flows — WECC rated
+        paths) instead of individual lines. ``engine.activated_lines`` then
+        names flowgate ids; ``flow_offsets`` keys flowgate ids. ``line_dual``
+        carries the IMPLIED per-line duals ``Sᵀμ`` so every downstream ledger
+        and figure reads unchanged; ``fg_dual``/``fg_flow``/``fg_limit`` carry
+        the flowgate layer itself. Default ``None`` = per-line limits (the
+        original behaviour, byte-identical).
+    dc_links : dict, optional
+        Controllable radial HVDC ties (PDCI, IPP, …): ``{link_id: {"bus0",
+        "bus1", "p_max", "p_min"}}``. Each link adds ONE signed dispatch
+        variable ``t ∈ [p_min, p_max]`` (MW, positive = bus0 → bus1;
+        ``p_min`` defaults to 0, pass a negative value for reverse
+        capability) at zero cost: injection ``−t`` at bus0 and ``+t`` at
+        bus1, so the energy balance is untouched and each activated
+        constraint row gains the column ``H[:,bus1] − H[:,bus0]``. The
+        optimum arbitrages the two ends' LMPs until the link saturates —
+        its rent is ``(λ_{bus1} − λ_{bus0})·t``. Flows return in
+        ``link_flow``. Default ``None`` adds no links.
 
     Returns
     -------
@@ -305,6 +457,14 @@ def solve_engine_dispatch(
     D = len(dem_ids)
     dem_cap = np.array(dem_cap_l)
 
+    # DC links: one signed transfer variable per link (see the docstring).
+    link_ids = list(dc_links or {})
+    L = len(link_ids)
+    link_b0 = [str(dc_links[l]["bus0"]) for l in link_ids]
+    link_b1 = [str(dc_links[l]["bus1"]) for l in link_ids]
+    link_lo = [float(dc_links[l].get("p_min", 0.0)) for l in link_ids]
+    link_hi = [float(dc_links[l]["p_max"]) for l in link_ids]
+
     # Fixed injection at each bus from loads (−) and exogenous schedules (+)
     load_vec = np.zeros(pt.n_bus)
     for bus, mw in engine.loads.items():
@@ -317,34 +477,49 @@ def solve_engine_dispatch(
     total_exo = exo_vec.sum()
 
     # ── Energy balance:  Σ_g g + Σ_n u_n − Σ_j q_j = total_load − total_exo ──
-    # gens (+1) and shed (+1) supply; demand bids (−1) are extra load served.
+    # gens (+1) and shed (+1) supply; demand bids (−1) are extra load served;
+    # a DC link's two ends cancel, so its balance coefficient is 0.
     A_eq = np.concatenate([np.ones((1, G + K)), -np.ones((1, D))], axis=1)
+    if L:
+        A_eq = np.concatenate([A_eq, np.zeros((1, L))], axis=1)
     b_eq = np.array([total_load - total_exo])
 
-    # ── Activated line limits ────────────────────────────────────────────
-    if engine.activated_lines == "all":
-        act = list(range(pt.n_line))
+    # ── Activated constraint layer: per-LINE (default) or per-FLOWGATE ───
+    # With flowgates=None the aliases ARE the pt arrays (same objects), so the
+    # arithmetic below is the original per-line construction, op for op.
+    if flowgates is None:
+        cids, Hmat, fwd, rev, cidx = pt.lines, pt.ptdf, pt.s_nom, pt.s_nom, pt.line_idx
     else:
-        act = [pt.line_idx[str(l)] for l in engine.activated_lines]
+        cids, Hmat = flowgates.ids, flowgates.H(pt)
+        fwd, rev, cidx = flowgates.fwd, flowgates.rev, flowgates.fg_idx
+    if engine.activated_lines == "all":
+        act = list(range(len(cids)))
+    else:
+        act = [cidx[str(l)] for l in engine.activated_lines]
 
-    # F_l = Σ_g PTDF[l, bus_g] g_g + Ffix_l,  Ffix_l = Σ_n PTDF[l,n](exo_n − load_n)
-    Ffix = pt.ptdf @ (exo_vec - load_vec)
-    gen_sf = np.array([[pt.ptdf[l, pt.bus_idx[gb]] for gb in gen_bus] for l in act]) \
+    # f_k = Σ_g H[k, bus_g] g_g + Ffix_k,  Ffix_k = Σ_n H[k,n](exo_n − load_n)
+    Ffix = Hmat @ (exo_vec - load_vec)
+    gen_sf = np.array([[Hmat[l, pt.bus_idx[gb]] for gb in gen_bus] for l in act]) \
         if act else np.zeros((0, G))
-    shed_sf = np.array([[pt.ptdf[l, pt.bus_idx[b]] for b in shed_bus] for l in act]) \
+    shed_sf = np.array([[Hmat[l, pt.bus_idx[b]] for b in shed_bus] for l in act]) \
         if act else np.zeros((0, K))
     # demand bids withdraw, so their flow contribution is −SF (a negative injection)
-    dem_sf = np.array([[-pt.ptdf[l, pt.bus_idx[b]] for b in dem_bus] for l in act]) \
+    dem_sf = np.array([[-Hmat[l, pt.bus_idx[b]] for b in dem_bus] for l in act]) \
         if act else np.zeros((0, D))
+    # a DC link transfers t from bus0 to bus1: column H[:,bus1] − H[:,bus0]
+    link_sf = np.array([[Hmat[l, pt.bus_idx[b1]] - Hmat[l, pt.bus_idx[b0]]
+                         for b0, b1 in zip(link_b0, link_b1)] for l in act]) \
+        if act else np.zeros((0, L))
 
     A_ub, b_ub = [], []
     for row, l in enumerate(act):
-        off = offsets.get(pt.lines[l], 0.0)            # accommodated flow (signed)
-        row_sf = np.concatenate([gen_sf[row], shed_sf[row], dem_sf[row]])
-        A_ub.append(row_sf)                            # +(flow+off) ≤ F̄ − Ffix
-        b_ub.append(pt.s_nom[l] - Ffix[l] - off)
-        A_ub.append(-row_sf)                           # −(flow+off) ≤ F̄ + Ffix
-        b_ub.append(pt.s_nom[l] + Ffix[l] + off)
+        off = offsets.get(cids[l], 0.0)                # accommodated flow (signed)
+        row_sf = np.concatenate([gen_sf[row], shed_sf[row], dem_sf[row],
+                                 link_sf[row]])
+        A_ub.append(row_sf)                            # +(flow+off) ≤ fwd − Ffix
+        b_ub.append(fwd[l] - Ffix[l] - off)
+        A_ub.append(-row_sf)                           # −(flow+off) ≤ rev + Ffix
+        b_ub.append(rev[l] + Ffix[l] + off)
 
     A_ub = np.array(A_ub) if A_ub else None
     b_ub = np.array(b_ub) if b_ub else None
@@ -353,9 +528,11 @@ def solve_engine_dispatch(
         cost,
         np.full(K, float(shed_price)) if K else np.zeros(0),
         -np.array(dem_price_l) if D else np.zeros(0),   # demand bid: benefit = −price
+        np.zeros(L),                                    # DC links transfer at no cost
     ])
     bounds = ([(0, c) for c in cap] + [(0, c) for c in shed_cap]
-              + [(0, c) for c in dem_cap])
+              + [(0, c) for c in dem_cap]
+              + list(zip(link_lo, link_hi)))
     res = linprog(
         c_vec, A_ub=A_ub, b_ub=b_ub, A_eq=A_eq, b_eq=b_eq,
         bounds=bounds, method="highs",
@@ -366,6 +543,7 @@ def solve_engine_dispatch(
     g_opt = res.x[:G]
     u_opt = res.x[G:G + K]
     d_opt = res.x[G + K:G + K + D]
+    t_opt = res.x[G + K + D:G + K + D + L]
     dispatch = {gid: float(g_opt[i]) for i, gid in enumerate(gen_ids)}
 
     # ── Dual decomposition → nodal LMP (eq. 9) ───────────────────────────
@@ -375,12 +553,17 @@ def solve_engine_dispatch(
     energy_price = float(res.eqlin.marginals[0])
     m = res.ineqlin.marginals if (A_ub is not None) else np.array([])
 
-    line_dual = {pt.lines[l]: 0.0 for l in range(pt.n_line)}
+    fg_dual = {cids[l]: 0.0 for l in range(len(cids))}
     cong = np.zeros(pt.n_bus)
     for row, l in enumerate(act):
         mu = float(m[2 * row] - m[2 * row + 1])        # signed congestion dual
-        line_dual[pt.lines[l]] = mu
-        cong += pt.ptdf[l] * mu
+        fg_dual[cids[l]] = mu
+        cong += Hmat[l] * mu
+    if flowgates is None:
+        line_dual = dict(fg_dual)                      # cids ARE the lines
+    else:
+        impl = flowgates.implied_line_duals(fg_dual)   # μ^impl = Sᵀ μ_fg
+        line_dual = {pt.lines[i]: float(impl[i]) for i in range(pt.n_line)}
 
     lmp = {pt.buses[n]: energy_price + cong[n] for n in range(pt.n_bus)}
 
@@ -398,6 +581,9 @@ def solve_engine_dispatch(
     for b, q in zip(dem_bus, d_opt):
         dem_vec[pt.bus_idx[b]] += q
     inj += exo_vec - load_vec + shed_vec - dem_vec   # served load (d−u) plus cleared demand bids
+    for b0, b1, t in zip(link_b0, link_b1, t_opt):   # DC-link transfers
+        inj[pt.bus_idx[b0]] -= t
+        inj[pt.bus_idx[b1]] += t
     flow_own = {pt.lines[l]: float((pt.ptdf[l] @ inj)) for l in range(pt.n_line)}
 
     return EngineResult(
@@ -415,6 +601,11 @@ def solve_engine_dispatch(
         status=res.message,
         shed_by_bus={b: float(u) for b, u in zip(shed_bus, u_opt) if u > 1e-9},
         demand_cleared={i: float(q) for i, q in zip(dem_ids, d_opt) if q > 1e-9},
+        link_flow={lid: float(t) for lid, t in zip(link_ids, t_opt)},
+        fg_dual=fg_dual,
+        fg_flow={cids[k]: float(Hmat[k] @ inj) for k in range(len(cids))},
+        fg_limit={cids[k]: (float(fwd[k]), float(rev[k]))
+                  for k in range(len(cids))},
     )
 
 
@@ -426,6 +617,7 @@ def solve_engine_qp(
     shed_price: float | None = None,
     binding_lines: list[str] | None = None,
     tol: float = 1e-3,
+    flowgates: FlowgateSet | None = None,
 ) -> EngineResult:
     """Clear one engine with **continuous linear marginal-cost curves** (a convex QP).
 
@@ -486,14 +678,19 @@ def solve_engine_qp(
     total_load = load_vec.sum()
     total_exo = exo_vec.sum()
 
-    if engine.activated_lines == "all":
-        act = list(range(pt.n_line))
+    if flowgates is None:
+        cids, Hmat, fwd, rev, cidx = pt.lines, pt.ptdf, pt.s_nom, pt.s_nom, pt.line_idx
     else:
-        act = [pt.line_idx[str(l)] for l in engine.activated_lines]
-    Ffix = pt.ptdf @ (exo_vec - load_vec)
-    gen_sf = np.array([[pt.ptdf[l, pt.bus_idx[gb]] for gb in gen_bus] for l in act]) \
+        cids, Hmat = flowgates.ids, flowgates.H(pt)
+        fwd, rev, cidx = flowgates.fwd, flowgates.rev, flowgates.fg_idx
+    if engine.activated_lines == "all":
+        act = list(range(len(cids)))
+    else:
+        act = [cidx[str(l)] for l in engine.activated_lines]
+    Ffix = Hmat @ (exo_vec - load_vec)
+    gen_sf = np.array([[Hmat[l, pt.bus_idx[gb]] for gb in gen_bus] for l in act]) \
         if act else np.zeros((0, G))
-    shed_sf = np.array([[pt.ptdf[l, pt.bus_idx[bb]] for bb in shed_bus] for l in act]) \
+    shed_sf = np.array([[Hmat[l, pt.bus_idx[bb]] for bb in shed_bus] for l in act]) \
         if act else np.zeros((0, K))
 
     N = G + K
@@ -507,8 +704,8 @@ def solve_engine_qp(
         rows, lb, ub = [], [], []
         for r, l in enumerate(act):
             rows.append(np.concatenate([gen_sf[r], shed_sf[r]]))
-            lb.append(-pt.s_nom[l] - Ffix[l])
-            ub.append(pt.s_nom[l] - Ffix[l])
+            lb.append(-rev[l] - Ffix[l])
+            ub.append(fwd[l] - Ffix[l])
         cons.append(LinearConstraint(np.array(rows), np.array(lb), np.array(ub)))
 
     bounds = Bounds(np.zeros(N), np.concatenate([cap, shed_cap]))
@@ -524,14 +721,17 @@ def solve_engine_qp(
     # ── Dual recovery from interior-gen stationarity ─────────────────────
     interior = [i for i in range(G) if tol < g_opt[i] < cap[i] - tol]
     if binding_lines is not None:
-        binding = [pt.line_idx[str(l)] for l in binding_lines]
+        binding = [cidx[str(l)] for l in binding_lines]
     else:
+        # asymmetric limits: forward-binding OR reverse-binding (at fwd == rev
+        # this reduces to the original |flow| > s_nom − 1e-4 test exactly)
+        def _fk(r, l):
+            return (gen_sf[r] @ g_opt + (shed_sf[r] @ u_opt if K else 0.0)) + Ffix[l]
         binding = [l for r, l in enumerate(act)
-                   if abs((gen_sf[r] @ g_opt + (shed_sf[r] @ u_opt if K else 0.0)) + Ffix[l])
-                   > pt.s_nom[l] - 1e-4]
+                   if _fk(r, l) > fwd[l] - 1e-4 or _fk(r, l) < -(rev[l] - 1e-4)]
     A, rhs = [], []
     for i in interior:
-        rowc = [1.0] + [pt.ptdf[l, pt.bus_idx[gen_bus[i]]] for l in binding]
+        rowc = [1.0] + [Hmat[l, pt.bus_idx[gen_bus[i]]] for l in binding]
         A.append(rowc)
         rhs.append(a[i] + b[i] * g_opt[i])
     for j in range(K):
@@ -540,7 +740,7 @@ def solve_engine_qp(
         # (the flat LP's behaviour). Without these rows an interval whose only
         # marginal variable is shed leaves the KKT system empty.
         if tol < u_opt[j] < shed_cap[j] - tol:
-            rowc = [1.0] + [pt.ptdf[l, pt.bus_idx[shed_bus[j]]] for l in binding]
+            rowc = [1.0] + [Hmat[l, pt.bus_idx[shed_bus[j]]] for l in binding]
             A.append(rowc)
             rhs.append(float(shed_price))
     if A:
@@ -556,11 +756,16 @@ def solve_engine_qp(
         lam = float(max(a[i] + b[i] * g_opt[i] for i in on)) if on else float(np.min(a))
         mu = {l: 0.0 for l in binding}
 
-    line_dual = {pt.lines[l]: 0.0 for l in range(pt.n_line)}
+    fg_dual = {cids[l]: 0.0 for l in range(len(cids))}
     cong = np.zeros(pt.n_bus)
     for l in binding:
-        line_dual[pt.lines[l]] = mu[l]
-        cong += pt.ptdf[l] * mu[l]
+        fg_dual[cids[l]] = mu[l]
+        cong += Hmat[l] * mu[l]
+    if flowgates is None:
+        line_dual = dict(fg_dual)
+    else:
+        impl = flowgates.implied_line_duals(fg_dual)
+        line_dual = {pt.lines[i]: float(impl[i]) for i in range(pt.n_line)}
     lmp = {pt.buses[n]: lam + cong[n] for n in range(pt.n_bus)}
 
     gen_by_bus: dict[str, float] = {}
@@ -589,6 +794,10 @@ def solve_engine_qp(
         total_cost=float(np.sum(a * g_opt + 0.5 * b * g_opt ** 2)),
         status=res.message,
         shed_by_bus={bb: float(uu) for bb, uu in zip(shed_bus, u_opt) if uu > 1e-9},
+        fg_dual=fg_dual,
+        fg_flow={cids[k]: float(Hmat[k] @ inj) for k in range(len(cids))},
+        fg_limit={cids[k]: (float(fwd[k]), float(rev[k]))
+                  for k in range(len(cids))},
     )
 
 
@@ -604,6 +813,8 @@ def solve_engine_transfers(
     exo: dict | None = None,
     shed_price: float | None = None,
     tol: float = 1e-3,
+    flowgates: FlowgateSet | None = None,
+    dc_links: dict | None = None,
 ) -> EngineResult:
     """Clear one engine in the EDAM-literal form: one power balance PER AREA
     (dual ``λ̂_a``, the per-BAA energy price) tied together by directional
@@ -633,7 +844,7 @@ def solve_engine_transfers(
         order; stored sorted). ``limit`` is the released transfer capacity
         ``T̄_ab`` applied to each direction, or ``None`` for unlimited. A pair
         absent from the dict has NO interface: no schedule may ride it, however
-        the wires connect.
+        the transmission elements connect.
     curves : dict, optional
         ``{gen: (a, b)}`` rising linear marginal costs — clears the convex QP
         (``trust-constr``) instead of the flat LP, as in ``solve_engine_qp``.
@@ -645,6 +856,12 @@ def solve_engine_transfers(
         exactly the legacy fold-in of ``exo`` into the interchange.
     shed_price : float, optional
         Load-shed relaxation at penalty V, as in ``solve_engine_dispatch``.
+    dc_links : dict, optional
+        Controllable radial HVDC ties, as in ``solve_engine_dispatch`` —
+        ``{link_id: {"bus0", "bus1", "p_max", "p_min"}}``, one signed
+        PHYSICAL variable per link (unlike the flow-inert scheduled
+        transfers, a link moves real flow AND both end-areas' balances).
+        Both ends must lie in declared areas. Not supported with ``curves``.
 
     Returns
     -------
@@ -711,7 +928,21 @@ def solve_engine_transfers(
     for bus, mw in engine.loads.items():
         load_vec[pt.bus_idx[str(bus)]] += mw
 
-    N = G + K + 2 * P                                    # g, u, then (fwd, rev) per interface
+    # DC links (physical, signed; see the docstring). Columns sit AFTER the
+    # interface pairs so every existing index is untouched.
+    if dc_links and curves:
+        raise NotImplementedError("dc_links with rising-MC curves is not supported")
+    link_ids = list(dc_links or {})
+    Lk = len(link_ids)
+    link_b0 = [str(dc_links[l]["bus0"]) for l in link_ids]
+    link_b1 = [str(dc_links[l]["bus1"]) for l in link_ids]
+    for bb in link_b0 + link_b1:
+        if bb not in area_of:
+            raise ValueError(f"dc_link bus {bb} is not covered by `areas`")
+    link_lo = [float(dc_links[l].get("p_min", 0.0)) for l in link_ids]
+    link_hi = [float(dc_links[l]["p_max"]) for l in link_ids]
+
+    N = G + K + 2 * P + Lk                # g, u, (fwd, rev) per interface, links
     a_idx = {a: r for r, a in enumerate(names)}
 
     # ── Per-area balances:  Σ_a g + Σ_a u − Σ_out t + Σ_in t = load_a ──────
@@ -726,35 +957,48 @@ def solve_engine_transfers(
         A_bal[a_idx[y], G + K + 2 * p] = +1.0            # … and imports into y
         A_bal[a_idx[x], G + K + 2 * p + 1] = +1.0        # t_yx the reverse
         A_bal[a_idx[y], G + K + 2 * p + 1] = -1.0
+    for q, (b0, b1) in enumerate(zip(link_b0, link_b1)):
+        col = G + K + 2 * P + q                          # += so an intra-area link nets to 0
+        A_bal[a_idx[area_of[b0]], col] += -1.0
+        A_bal[a_idx[area_of[b1]], col] += +1.0
     for a in names:
         b_bal[a_idx[a]] = sum(load_vec[pt.bus_idx[bb]] - exo_vec[pt.bus_idx[bb]]
                               for bb in areas[a])
 
-    # ── Activated line limits (transfers are flow-inert: zero columns) ─────
-    if engine.activated_lines == "all":
-        act = list(range(pt.n_line))
+    # ── Activated limits, per-LINE or per-FLOWGATE (transfers stay flow-inert:
+    #    zero columns either way) ─────────────────────────────────────────────
+    if flowgates is None:
+        cids, Hmat, fwd, rev, cidx = pt.lines, pt.ptdf, pt.s_nom, pt.s_nom, pt.line_idx
     else:
-        act = [pt.line_idx[str(l)] for l in engine.activated_lines]
-    Ffix = pt.ptdf @ (exo_vec - load_vec)
+        cids, Hmat = flowgates.ids, flowgates.H(pt)
+        fwd, rev, cidx = flowgates.fwd, flowgates.rev, flowgates.fg_idx
+    if engine.activated_lines == "all":
+        act = list(range(len(cids)))
+    else:
+        act = [cidx[str(l)] for l in engine.activated_lines]
+    Ffix = Hmat @ (exo_vec - load_vec)
     flow_rows = np.zeros((len(act), N))
     for r, l in enumerate(act):
         for i, gb in enumerate(gen_bus):
-            flow_rows[r, i] = pt.ptdf[l, pt.bus_idx[gb]]
+            flow_rows[r, i] = Hmat[l, pt.bus_idx[gb]]
         for j, sb in enumerate(shed_bus):
-            flow_rows[r, G + j] = pt.ptdf[l, pt.bus_idx[sb]]
+            flow_rows[r, G + j] = Hmat[l, pt.bus_idx[sb]]
+        for q, (b0, b1) in enumerate(zip(link_b0, link_b1)):
+            flow_rows[r, G + K + 2 * P + q] = (Hmat[l, pt.bus_idx[b1]]
+                                               - Hmat[l, pt.bus_idx[b0]])
 
     t_ub = np.array([np.inf if v is None else v for v in lims for _ in (0, 1)])
-    lo = np.zeros(N)
-    hi = np.concatenate([cap, shed_cap, t_ub])
+    lo = np.concatenate([np.zeros(G + K + 2 * P), np.array(link_lo)])
+    hi = np.concatenate([cap, shed_cap, t_ub, np.array(link_hi)])
 
     if not curves:
         # ---- flat-offer LP (HiGHS) ----------------------------------------
         c_vec = np.concatenate([a_c, np.full(K, float(shed_price)) if K else np.zeros(0),
-                                np.zeros(2 * P)])
+                                np.zeros(2 * P + Lk)])
         A_ub, b_ub = [], []
         for r, l in enumerate(act):
-            A_ub.append(flow_rows[r]);  b_ub.append(pt.s_nom[l] - Ffix[l])
-            A_ub.append(-flow_rows[r]); b_ub.append(pt.s_nom[l] + Ffix[l])
+            A_ub.append(flow_rows[r]);  b_ub.append(fwd[l] - Ffix[l])
+            A_ub.append(-flow_rows[r]); b_ub.append(rev[l] + Ffix[l])
         res = linprog(c_vec, A_ub=np.array(A_ub) if A_ub else None,
                       b_ub=np.array(b_ub) if b_ub else None,
                       A_eq=A_bal, b_eq=b_bal,
@@ -765,12 +1009,12 @@ def solve_engine_transfers(
         x = res.x
         lamhat = {a: float(res.eqlin.marginals[a_idx[a]]) for a in names}
         m = res.ineqlin.marginals if A_ub else np.array([])
-        line_dual = {pt.lines[l]: 0.0 for l in range(pt.n_line)}
+        fg_dual = {cids[l]: 0.0 for l in range(len(cids))}
         cong = np.zeros(pt.n_bus)
         for r, l in enumerate(act):
             mu = float(m[2 * r] - m[2 * r + 1])
-            line_dual[pt.lines[l]] = mu
-            cong += pt.ptdf[l] * mu
+            fg_dual[cids[l]] = mu
+            cong += Hmat[l] * mu
     else:
         # ---- rising-MC QP (trust-constr), duals from KKT stationarity ------
         H = np.zeros((N, N))
@@ -780,8 +1024,8 @@ def solve_engine_transfers(
         cons = [LinearConstraint(A_bal, b_bal, b_bal)]
         if act:
             cons.append(LinearConstraint(
-                flow_rows, np.array([-pt.s_nom[l] - Ffix[l] for l in act]),
-                np.array([pt.s_nom[l] - Ffix[l] for l in act])))
+                flow_rows, np.array([-rev[l] - Ffix[l] for l in act]),
+                np.array([fwd[l] - Ffix[l] for l in act])))
         x0 = np.minimum(np.where(np.isinf(hi), load_vec.sum(), hi),
                         np.full(N, load_vec.sum() / max(N, 1)))
         r = minimize(lambda z: 0.5 * z @ (H @ z) + c_lin @ z, x0,
@@ -791,13 +1035,14 @@ def solve_engine_transfers(
                      options={"gtol": 1e-10, "xtol": 1e-12, "maxiter": 3000})
         x = r.x
         binding = [l for rr, l in enumerate(act)
-                   if abs(flow_rows[rr] @ x + Ffix[l]) > pt.s_nom[l] - 1e-4]
+                   if flow_rows[rr] @ x + Ffix[l] > fwd[l] - 1e-4
+                   or flow_rows[rr] @ x + Ffix[l] < -(rev[l] - 1e-4)]
         # KKT unknowns: [λ̂_a … , μ_l for binding lines]; rows from interior
         # generators/shed (marginal cost pins its area's price + congestion) and
         # interior transfers (a slack interface with flow ties its two λ̂ together).
         rows, rhs = [], []
         def _row(area, bus=None):
-            rc = [0.0] * A + ([pt.ptdf[l, pt.bus_idx[bus]] for l in binding] if bus else [0.0] * len(binding))
+            rc = [0.0] * A + ([Hmat[l, pt.bus_idx[bus]] for l in binding] if bus else [0.0] * len(binding))
             rc[a_idx[area]] = 1.0
             return rc
         for i in range(G):
@@ -824,22 +1069,30 @@ def solve_engine_transfers(
             flat = float(max(a_c[i] + b_c[i] * x[i] for i in on)) if on else float(np.min(a_c))
             sol = np.array([flat] * A + [0.0] * len(binding))
         lamhat = {a: float(sol[a_idx[a]]) for a in names}
-        line_dual = {pt.lines[l]: 0.0 for l in range(pt.n_line)}
+        fg_dual = {cids[l]: 0.0 for l in range(len(cids))}
         cong = np.zeros(pt.n_bus)
         for k2, l in enumerate(binding):
             mu = float(sol[A + k2])
-            line_dual[pt.lines[l]] = mu
-            cong += pt.ptdf[l] * mu
+            fg_dual[cids[l]] = mu
+            cong += Hmat[l] * mu
 
     g_opt, u_opt = x[:G], x[G:G + K]
+    t_link = x[G + K + 2 * P:G + K + 2 * P + Lk]
 
     # ── Stage two: the tags — minimal total scheduled MW at this dispatch ──
+    # An area's INTERFACE-borne position is its generation surplus plus what
+    # the physical DC links already deliver into (or draw out of) it.
+    link_net = {a: 0.0 for a in names}
+    for q, (b0, b1) in enumerate(zip(link_b0, link_b1)):
+        link_net[area_of[b0]] -= float(t_link[q])
+        link_net[area_of[b1]] += float(t_link[q])
     ex = {a: float(sum(g_opt[i] for i in range(G) if area_of[gen_bus[i]] == a)
                    + sum(u_opt[j] for j in range(K) if area_of[shed_bus[j]] == a)
+                   + link_net[a]
                    - b_bal[a_idx[a]]) for a in names}     # net export of each area
     transfers = {k: 0.0 for k in ifc}
     if P:
-        A_t = A_bal[:A - 1, G + K:]                       # drop one redundant balance row
+        A_t = A_bal[:A - 1, G + K:G + K + 2 * P]          # drop one redundant balance row
         b_t = np.array([-ex[a] for a in names[:A - 1]])   # −Σ_out t + Σ_in t = −e_a^out
         r2 = linprog(np.ones(2 * P), A_eq=A_t, b_eq=b_t,
                      bounds=[(0, None if np.isinf(u) else u) for u in t_ub],
@@ -878,7 +1131,16 @@ def solve_engine_transfers(
     for j, sb in enumerate(shed_bus):
         inj[pt.bus_idx[sb]] += u_opt[j]
     inj += exo_vec - load_vec
+    for b0, b1, t in zip(link_b0, link_b1, t_link):    # DC-link transfers
+        inj[pt.bus_idx[b0]] -= t
+        inj[pt.bus_idx[b1]] += t
     flow_own = {pt.lines[l]: float(pt.ptdf[l] @ inj) for l in range(pt.n_line)}
+
+    if flowgates is None:
+        line_dual = dict(fg_dual)                      # cids ARE the lines
+    else:
+        impl = flowgates.implied_line_duals(fg_dual)   # μ^impl = Sᵀ μ_fg
+        line_dual = {pt.lines[i]: float(impl[i]) for i in range(pt.n_line)}
 
     return EngineResult(
         name=engine.name,
@@ -894,10 +1156,15 @@ def solve_engine_transfers(
         total_cost=float(np.sum(a_c * g_opt + 0.5 * b_c * g_opt ** 2)),
         status="optimal (two-stage: dispatch, then min-total-schedule tags)",
         shed_by_bus={sb: float(uu) for sb, uu in zip(shed_bus, u_opt) if uu > 1e-9},
+        link_flow={lid: float(t) for lid, t in zip(link_ids, t_link)},
         area_prices=lamhat,
         transfers=transfers,
         transfer_duals=transfer_duals,
         transfer_limits={k: lims[p] for p, k in enumerate(ifc)},
+        fg_dual=fg_dual,
+        fg_flow={cids[k]: float(Hmat[k] @ inj) for k in range(len(cids))},
+        fg_limit={cids[k]: (float(fwd[k]), float(rev[k]))
+                  for k in range(len(cids))},
     )
 
 
@@ -1037,6 +1304,108 @@ def seam_dual_gap(results: list[EngineResult], buses: list[str]) -> pd.DataFrame
             a, b = names[i], names[j]
             df[f"Δλ[{a}→{b}]"] = (df[f"λ[{b}]"] - df[f"λ[{a}]"]).round(2)
     return df
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# The CASE: the injectable scenario layer
+# ──────────────────────────────────────────────────────────────────────────
+# Everything a clearing needs that is not the algebra — the network builder,
+# the fleet, the loads, the drawing layout, the risk drivers — lives in a
+# *case* object. ``wscc9_model.CASE`` is one implementation (the 9-bus teaching
+# case); the western-seams-lab repo supplies another (the real WECC map-mirror).
+# The shared libraries resolve their defaults through ``active()`` instead of
+# importing ``wscc9_model`` directly, which is what lets one copy of the
+# library serve both series.
+#
+# This registry lives HERE, not in a new module, because every published
+# notebook's Colab bootstrap fetches a fixed list of ten flat module files by
+# name — adding an eleventh would break all of them, while ``seams_engine`` is
+# already on the list and imports no case at module scope.
+
+@dataclass
+class CaseNetwork:
+    """One built network with its shift factors (and, later, its flowgates)."""
+
+    network: object                    # pypsa.Network
+    pt: PTDFData
+    fg: object | None = None           # FlowgateSet (phase 4); None = per-line
+
+
+class Case:
+    """The case contract (duck-typed; ``wscc9_model.WSCC9Case`` is the reference).
+
+    Attributes / properties
+        name         : str            — display name ("WSCC-9", "WECC-map-1883")
+        slack_bus    : str            — the PTDF slack bus of this case
+        gen_fleet    : dict           — {gid: {"bus", "cost", "p_nom", ...}}
+        loads        : dict           — {bus: MW}
+        shed_price   : float          — the case's V (load-shed penalty)
+        bus_to_area  : dict           — {bus: BA}; {} where BAs come from Footprints
+        bus_colors, coords, ring_order, center_bus, rotation_deg — drawing layout
+        risk_load_sd, risk_cost_sd    — the case's driver spreads (risk.py)
+
+    Methods
+        build(line_ratings=None, **variant) -> CaseNetwork
+            Fresh network each call (notebooks mutate engines/networks in
+            place); only the PTDF may be cached. Unknown ``variant`` kwargs
+            must RAISE, never be silently ignored.
+        make_engine(name, buses, gen_fleet=None, loads=None, activated="all")
+        hub_kind() -> "auto" | "gap" | "elap"
+        drivers(kinds=("load", "cost")) -> dict
+            The case's canonical uncertain drivers ({key: dist} for risk.py).
+        historical_days() -> dict                              (optional)
+            {day_id: {driver_key: 24-array | scalar}} — feeds
+            risk.day_bootstrap on a bundle-backed case.
+    """
+
+
+_ACTIVE = None                         # the ambient case, set by set_case()
+
+#: Lazy default: the 9-bus teaching case. Import happens on first ``active()``
+#: call, never at module import, so this module works when wscc9_model is absent.
+_DEFAULT_CASE = ("wscc9_model", "CASE")
+
+
+def set_case(case):
+    """Install ``case`` as the ambient case; returns the previous one."""
+    global _ACTIVE
+    prev, _ACTIVE = _ACTIVE, case
+    return prev
+
+
+def active():
+    """The ambient case, lazily defaulting to the 9-bus teaching case.
+
+    Library functions call this ONLY to fill in defaults the caller did not
+    supply (fleet, loads, slack bus, layout). A caller that passes everything
+    explicitly never touches the registry.
+    """
+    global _ACTIVE
+    if _ACTIVE is None:
+        import importlib
+
+        mod, attr = _DEFAULT_CASE
+        _ACTIVE = getattr(importlib.import_module(mod), attr)
+    return _ACTIVE
+
+
+class using:
+    """Context manager: run a block under a different ambient case.
+
+    >>> with seams_engine.using(my_case):
+    ...     ra.allocate_congestion_rent(...)   # resolves defaults from my_case
+    """
+
+    def __init__(self, case):
+        self.case = case
+
+    def __enter__(self):
+        self.prev = set_case(self.case)
+        return self.case
+
+    def __exit__(self, *exc):
+        set_case(self.prev)
+        return False
 
 
 if __name__ == "__main__":

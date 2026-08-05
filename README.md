@@ -59,17 +59,25 @@ packages and pulls in the helper modules automatically.
   (and transfer) revenue is allocated, Method 1 vs Method 2.
   [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pdockery/wscc9-illustrative-model/blob/main/201_congestion_revenue_allocation.ipynb)
 
-- **202 · The market seam** — the hinge from one market to two: two engines clearing
-  independently on the shared grid, each seam line allocated to one market (the mirror
-  of the two-BA tie assignment) with the superposition priced by neither, two prices at
-  every bus (the seam dual gap), and the unified counterfactual that bounds the welfare
-  loss.
+- **202 · The market seam** — the market clearing engine as an object: three sets
+  (resources, loads, an activated constraint set) on a shared network, two engines
+  instantiated side by side, each seam line allocated to one manager (the mirror of the
+  two-BA tie assignment) with the superposition priced by neither — the formulations, a
+  worked example, and a sandbox.
   [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pdockery/wscc9-illustrative-model/blob/main/202_market_seam.ipynb)
 
-- **204 · Market seam issues** — the three congestion-coordination issues that follow
-  (dispatch interference, inefficient accommodation, participant-initiated interchange),
-  the risk a trader carries, and the seam ledger.
-  [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pdockery/wscc9-illustrative-model/blob/main/204_market_seam_issues.ipynb)
+- **204 · Congestion & constraint management at the seam** — the operator-to-operator
+  problem: flow superposition on shared transmission elements, under-accommodation
+  (overload, then real-time relief at a premium, and the day-ahead-to-real-time
+  settlement gap that relief opens) vs over-accommodation (ex-ante reservations
+  idling capability, and the phantom congestion they price).
+  [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pdockery/wscc9-illustrative-model/blob/main/204_seam_congestion_management.ipynb)
+
+- **205 · Interchange at the seam** — the participant-to-participant problem: the seam
+  dual gap (two prices at every bus), the scheduled interchange and the welfare it
+  closes, a participant-initiated trade's four-leg settlement, the latency and risk of
+  committing before either market clears, and the seam ledger.
+  [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pdockery/wscc9-illustrative-model/blob/main/205_seam_interchange.ipynb)
 
 - **212 · Two markets and a transfer** — two markets on three BAs: Market A is two
   non-connected BAs coordinated by a transfer, which Market B wheels; the transaction
@@ -87,7 +95,7 @@ packages and pulls in the helper modules automatically.
 - **302 · A contingency in the neighbouring market** — two co-equal markets and a
   contingency on the other market's circuit; blind interference, inefficient
   accommodation, and coordination, each shown as four views (Market A, Market B, the
-  Combined wire, and the Unified clearing).
+  Combined line, and the Unified clearing).
   [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pdockery/wscc9-illustrative-model/blob/main/302_two_market_contingency.ipynb)
 
 - **331 · The self-schedule incentive** — does the congestion-revenue allocation rule
@@ -105,8 +113,9 @@ packages and pulls in the helper modules automatically.
 | `111_atc_simultaneous_feasibility.ipynb` | Fundamentals: portfolio planning, ATC, the simultaneous-feasibility test, combined-ATC oversubscription |
 | `112_three_ba_fundamentals.ipynb` | Fundamentals: a third BA and single-node BAs |
 | `201_congestion_revenue_allocation.ipynb` | Two-BA congestion-revenue allocation (Method 1/2) |
-| `202_market_seam.ipynb` | Two engines on one grid; disjoint activated sets, the seam dual gap, unified counterfactual |
-| `204_market_seam_issues.ipynb` | Two markets; three seam issues + trader risk + seam ledger |
+| `202_market_seam.ipynb` | The engine as three sets on a shared network; two engines side by side; formulations, example, sandbox |
+| `204_seam_congestion_management.ipynb` | Superposition; under- vs over-accommodation; the two-settlement congestion rent and the reservation error |
+| `205_seam_interchange.ipynb` | The seam dual gap; scheduled interchange; trade latency and risk; the seam ledger |
 | `212_two_market_transfer.ipynb` | Two markets on three BAs; transfer, wheeling, accommodation, timing risk, sandbox |
 | `301_two_settlement_congestion.ipynb` | Moving day-ahead/real-time boundary; contingency + accommodation |
 | `302_two_market_contingency.ipynb` | Two markets; a contingency in the other market; four-view comparison |

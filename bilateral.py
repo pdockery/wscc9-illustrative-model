@@ -195,9 +195,9 @@ def rate_right(pt, source, sink, etc: float = 0.0, monitored="all") -> Right:
 # ──────────────────────────────────────────────────────────────────────────
 def _competitive_lmp(pt, gen_fleet=None, loads=None) -> dict[str, float]:
     """LMP at every bus of the fixed-load DC-OPF (line limits enforced)."""
-    import wscc9_model as wm
-    fleet = wm.DEFAULT_GEN_FLEET if gen_fleet is None else gen_fleet
-    loads = wm.DEFAULT_LOADS if loads is None else loads
+    from seams_engine import active as _case
+    fleet = _case().gen_fleet if gen_fleet is None else gen_fleet
+    loads = _case().loads if loads is None else loads
     eng = MarketEngine(
         name="BENCH",
         gens={g: dict(s) for g, s in fleet.items()},
@@ -219,8 +219,8 @@ def calibrate_load_centers(pt, loads=None, voll: float = 1000.0, firmness: float
     ``firmness`` is the share of forecast the price-taking backstop can cover before VOLL
     (ample backstop -> flat residual -> small premium; tight -> steep -> cheap units pivotal).
     """
-    import wscc9_model as wm
-    loads = wm.DEFAULT_LOADS if loads is None else loads
+    from seams_engine import active as _case
+    loads = _case().loads if loads is None else loads
     lmp = competitive_lmp if competitive_lmp is not None else _competitive_lmp(pt, loads=loads)
     centers = {}
     for bus, d_nom in loads.items():
@@ -1176,9 +1176,10 @@ def order_book_redispatch(pt, suppliers: list[Supplier], result: OrderBookResult
 # ──────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import wscc9_model as wm
+    from seams_engine import active as _case
 
     suppliers = [Supplier(g, s["bus"], s["cost"], s["p_nom"])
-                 for g, s in wm.DEFAULT_GEN_FLEET.items()]
+                 for g, s in _case().gen_fleet.items()]
 
     # ── Scenario A: the 111 planning use (default, uncongested network) ──────
     # The bus-3 supplier's planned book must reduce to 111's naive requests, so the
