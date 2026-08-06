@@ -6,7 +6,7 @@ congestion rent, and market-seams concepts from the ground up on the classic **W
 network, clears a DC-OPF with PTDF shift factors, and renders matching network +
 nodal-dispatch (chord) figures. No external data files are needed.
 
-The notebooks share a set of small teaching libraries, so the modelling stays consistent
+The notebooks share a set of small teaching libraries, so the modeling stays consistent
 across the series and a student can read a notebook top-to-bottom or open the library to
 see how a piece works. The numbering is a learning pathway — the **hundreds digit is the
 difficulty tier** (100 fundamentals, 200 core issue, 300 advanced) and the **last digit
@@ -87,6 +87,15 @@ packages and pulls in the helper modules automatically.
 
 ### Advanced
 
+- **222 · Intertie schedule modeling — SP-Tie vs GAP-Tie** — where a scheduled
+  import enters the network, and what the placement costs. The schedule modeled at
+  the scheduling point (SP-Tie) against the same schedule sourced from the exporter's
+  generation-aggregation point (GAP-Tie), the phantom congestion the first can report
+  on a line that is not physically loaded, the mirror case where the low-cost market
+  exports as a demand bid, and the expected cost of the placement error once both
+  markets' costs are uncertain.
+  [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pdockery/wscc9-illustrative-model/blob/main/222_intertie_sp_gap_tie.ipynb)
+
 - **301 · Two settlement footprints** — the moving day-ahead (EDAM) / real-time (WEIM)
   market boundary; the exogenous→endogenous transition, the cross-settlement position
   ledger, a contingency, and its accommodation.
@@ -117,6 +126,7 @@ packages and pulls in the helper modules automatically.
 | `204_seam_congestion_management.ipynb` | Superposition; under- vs over-accommodation; the two-settlement congestion rent and the reservation error |
 | `205_seam_interchange.ipynb` | The seam dual gap; scheduled interchange; trade latency and risk; the seam ledger |
 | `212_two_market_transfer.ipynb` | Two markets on three BAs; transfer, wheeling, accommodation, timing risk, sandbox |
+| `222_intertie_sp_gap_tie.ipynb` | Intertie schedule placement: SP-Tie vs GAP-Tie; phantom congestion; export as a demand bid; expected cost under cost uncertainty |
 | `301_two_settlement_congestion.ipynb` | Moving day-ahead/real-time boundary; contingency + accommodation |
 | `302_two_market_contingency.ipynb` | Two markets; a contingency in the other market; four-view comparison |
 | `331_self_schedule_incentive.ipynb` | The self-schedule incentive: schedule-keyed rebates, out-of-merit gaming, counterflow |
