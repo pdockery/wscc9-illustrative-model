@@ -571,6 +571,7 @@ def plot_nodal_circlize(
     gen_bid_labels=True,
     gen_cost_labels=False,
     block_mw_unit=True,
+    show_bus_price=True,
 ):
     """
     Create a circlize chord diagram showing nodal generation, demand, and flows.
@@ -644,6 +645,12 @@ def plot_nodal_circlize(
         top (skipping the demand-labeled bar), chosen dynamically so it does not
         depend on any particular bus name/number. A legend-on-the-figure so the inner ring and chords
         explain themselves once.
+    show_bus_price : bool
+        Print the price under each outer ring label ("Bus N / $X/MWh"). Set
+        False for a CONFIGURATION view, where the demand-bar height is a chosen
+        reference — the dearest unit's offer, say — rather than a cleared LMP:
+        the bars still take their height from ``bus_lmps``, but the ring reads
+        plain "Bus N" so no number is presented as a price it is not.
 
     Returns
     -------
@@ -987,7 +994,7 @@ def plot_nodal_circlize(
                 # Price label on load bar (suppressed in compact mode and whenever a
                 # track_fontsize floor is set — it is a tiny, duplicate of the bus LMP
                 # already shown in the outer ring label and the shared key).
-                if not compact and track_fontsize is None:
+                if not compact and track_fontsize is None and show_bus_price:
                     lmp_label = f"${bus_lmp:.1f}"
                     if bus_lmp > norm_price:
                         lmp_label = f"${bus_lmp:,.1f}"
@@ -1066,7 +1073,7 @@ def plot_nodal_circlize(
             except Exception:
                 sector.text(f"({bus})", r=103, fontsize=label_fontsize,
                             fontweight='bold', color=bc_dark)
-        elif bus_lmp > 0:
+        elif bus_lmp > 0 and show_bus_price:
             sector.text(f"Bus {bus}\n${bus_lmp:.1f}/MWh", r=103,
                         fontsize=label_fontsize, fontweight='bold', color=bc_dark)
         else:
@@ -1813,6 +1820,7 @@ def plot_combined_letter(
     gen_bid_labels=True,
     gen_cost_labels=False,
     block_mw_unit=True,
+    show_bus_price=True,
     all_buses=None,
     title_left='Network — DC power flow',
     title_right='Nodal dispatch - - merit order, demand, PTDF gen->load',
@@ -1887,7 +1895,7 @@ def plot_combined_letter(
         annotate_roles=annotate_roles, axis_key=axis_key,
         demand_segments=demand_segments,
         gen_bid_labels=gen_bid_labels, gen_cost_labels=gen_cost_labels,
-        block_mw_unit=block_mw_unit,
+        block_mw_unit=block_mw_unit, show_bus_price=show_bus_price,
         ax=ax_circ, label_fontsize=label_fontsize, compact=True,
         show_legend=False, sector_order=sector_order,
         start=start, center_bus=center_bus,
