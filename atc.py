@@ -43,7 +43,7 @@ or summed across uncoordinated balancing authorities, can violate (3) — the
 combined awards **oversubscribe** the feasible set. ``book_sequentially`` shows
 the within-footprint fix (decrement ATC by existing commitments, ETC), and
 ``ba_atc`` shows the cross-footprint failure (each BA rates a path through only
-its own monitored lines, missing a neighbour's loop flow).
+its own monitored lines, missing a neighbor's loop flow).
 """
 
 from __future__ import annotations
@@ -461,7 +461,7 @@ def ba_atc(pt, fp, name: str, source, sink, etc: float = 0.0) -> tuple[float, st
     """ATC a balancing authority posts for ``source->sink`` seeing only its own lines.
 
     Returns ``(atc_mw, binding_line)`` — TTC through ``ba_monitored_lines(name)``,
-    less ``etc``. A neighbour's internal line that this path loads is invisible
+    less ``etc``. A neighbor's internal line that this path loads is invisible
     here, which is exactly how combined ATC oversubscribes the network.
     """
     mon = ba_monitored_lines(pt, fp, name)
@@ -515,7 +515,7 @@ class CRRResult:
 
 
 def crr_auction(pt, bids, monitored="all", obligations=None, tol: float = 1e-7) -> CRRResult:
-    """Hogan's CRR/FTR auction: award point-to-point rights to maximise bid value
+    """Hogan's CRR/FTR auction: award point-to-point rights to maximize bid value
     subject to the simultaneous-feasibility test.
 
     Solves the linear program (Hogan 1992's *"maximizing the value of the selected
@@ -559,7 +559,7 @@ def crr_auction(pt, bids, monitored="all", obligations=None, tol: float = 1e-7) 
         rhs.append(np.array([float(cap)]))
     A_ub = np.vstack(blocks)
     b_ub = np.concatenate(rhs)
-    c = np.array([-b.premium for b in bids])                 # maximise value = minimise -value
+    c = np.array([-b.premium for b in bids])                 # maximize value = minimize -value
     bounds = [(0.0, b.mw) for b in bids]
     res = linprog(c, A_ub=A_ub, b_ub=b_ub, bounds=bounds, method="highs")
     if not res.success:

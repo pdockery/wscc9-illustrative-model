@@ -7,17 +7,17 @@
 ``nodal_plot`` provides the reusable primitives (network topology panel +
 circlize nodal-dispatch panel + ``plot_combined_letter`` that puts them side by
 side). This module holds the teaching *compositions* the notebooks reuse — one
-clearing drawn as a [network + nodal dispatch] pair, coloured by footprint, with
+clearing drawn as a [network + nodal dispatch] pair, colored by footprint, with
 the standard shared legend.
 
-* :func:`footprint_figure` — the composite for one clearing. Colour one
-  footprint and grey the rest (``highlight=`` or explicit ``dim_buses=``), draw
-  ties/managed lines in footprint colours, put a footprint band on the circlize
+* :func:`footprint_figure` — the composite for one clearing. Color one
+  footprint and gray the rest (``highlight=`` or explicit ``dim_buses=``), draw
+  ties/managed lines in footprint colors, put a footprint band on the circlize
   ring, and annotate any self-schedule on the network panel. This single
   function replaces the per-notebook ``example_figure`` (congestion notebooks,
-  greys the other BA) and ``market_figure`` (seams notebook, greys the other
+  grays the other BA) and ``market_figure`` (seams notebook, grays the other
   market).
-* :func:`composite_figure` — the unified two-panel view (nothing greyed), the
+* :func:`composite_figure` — the unified two-panel view (nothing grayed), the
   figure each downstream notebook prints in its set-up cell.
 * :func:`draw_net_dispatch` / :func:`transfer_figure` — the "Transfers" inset
   (each footprint as one bubble, the scheduled transfer as a flow/limit label)
@@ -68,13 +68,13 @@ def __getattr__(name):
         return lazies[name]()
     raise AttributeError(name)
 
-#: Tier colours for sold transmission rights drawn on the network.
+#: Tier colors for sold transmission rights drawn on the network.
 RIGHT_TIER_COLORS = {"inter": "#117A65", "intra": "#B9770E"}
 _WECC_PATH = "#B8860B"   # gold: a WECC-rated inter-BA path (tie)
 
-_DIM = "#C8CCCE"        # greyed (out-of-focus) footprint
+_DIM = "#C8CCCE"        # grayed (out-of-focus) footprint
 _UNASSIGNED = "#AAB7B8"  # line assigned to nobody
-_SELFSCHED = "#95A5A6"   # self-schedule: a price-taking block the dispatch did not optimise
+_SELFSCHED = "#95A5A6"   # self-schedule: a price-taking block the dispatch did not optimize
 
 
 def footprint_figure(
@@ -98,14 +98,14 @@ def footprint_figure(
     net, pt : pypsa.Network, PTDFData
         The network and its shift factors.
     fp : footprints.Footprints
-        The partition (line colours, bands, footprint membership).
+        The partition (line colors, bands, footprint membership).
     engine, res : MarketEngine, EngineResult
         The cleared engine and its result.
     highlight : str, optional
-        Footprint to keep in colour; every other footprint's buses are greyed.
+        Footprint to keep in color; every other footprint's buses are grayed.
         (Mutually exclusive with ``dim_buses``.)
     dim_buses : iterable, optional
-        Explicit buses to grey (the congestion-notebook per-BA view).
+        Explicit buses to gray (the congestion-notebook per-BA view).
     exo_sched : dict, optional
         ``{bus: MW}`` self-schedule (+ = delivery INTO the focus footprint).
         Drawn as it enters the clear (import = unpriced supply at the sink,
@@ -131,7 +131,7 @@ def footprint_figure(
     line_flows : dict, optional
         ``{line: MW}`` drawn on the network panel instead of the clearing's own
         ``res.flow_own``. Use for a STUDY view, where the market draws its own
-        book superposed on a proxy of the neighbour's.
+        book superposed on a proxy of the neighbor's.
     constrained_lines : iterable, optional
         Lines drawn red instead of the clearing's binding set (``res.line_dual``).
         Pairs with ``line_flows``: a studied line can be flagged without any dual.
@@ -163,7 +163,7 @@ def footprint_figure(
         for b, mw in (exo_sched or {}).items():
             b = str(b)
             if mw >= 0:
-                # A self-schedule is price-taking and not optimised: draw it grey,
+                # A self-schedule is price-taking and not optimized: draw it gray,
                 # with the bar AT the bus LMP (price=lmp, no bid) so it sits on the
                 # dashed LMP line rather than showing a marginal-cost/rent gap.
                 sup.setdefault(b, []).append({"unit_id": "self_schedule",
@@ -185,7 +185,7 @@ def footprint_figure(
         flow_dem = dem
     flows = compute_ptdf_flows(net, sup, flow_dem)
 
-    # which buses to grey
+    # which buses to gray
     if dim_buses is not None:
         dim = {str(b) for b in dim_buses}
     elif highlight is not None:
@@ -197,8 +197,8 @@ def footprint_figure(
     for b in dim:
         colors[b] = _DIM
 
-    # line colours: a managed line takes its footprint's colour; grey a line
-    # between greyed buses or assigned to a fully-greyed footprint.
+    # line colors: a managed line takes its footprint's color; gray a line
+    # between grayed buses or assigned to a fully-grayed footprint.
     lcolors = fp.line_colors(pt)
     dim_fps = {name for name in fp.names if all(str(b) in dim for b in fp.defs[name])}
     for l in pt.lines:
@@ -262,10 +262,10 @@ def footprint_figure(
                                       label="Line assigned to neither footprint"))
     if has_selfsched:
         handles.append(mpatches.Patch(fc=_SELFSCHED, ec="#555",
-                                      label="Self-schedule (price-taking; bar at LMP, not optimised)"))
+                                      label="Self-schedule (price-taking; bar at LMP, not optimized)"))
     if has_shed:
         handles.append(mpatches.Patch(fc="#888", alpha=0.3, ec="#555",
-                                      label="Load shed (unserved -- bus colour, faint; LMP = SHED_PRICE)"))
+                                      label="Load shed (unserved -- bus color, faint; LMP = SHED_PRICE)"))
     handles += [
         Line2D([0], [0], color="#E74C3C", lw=3, label="Congested line (binding)"),
         Line2D([0], [0], color="#17202A", lw=1.6, ls="--",
@@ -279,7 +279,7 @@ def footprint_figure(
 
 
 def composite_figure(net, pt, fp, engine, res, *, suptitle=None, **kw):
-    """The unified two-panel composite (nothing greyed) — the set-up figure each
+    """The unified two-panel composite (nothing grayed) — the set-up figure each
     downstream notebook prints. Thin wrapper over :func:`footprint_figure`."""
     return footprint_figure(net, pt, fp, engine, res, suptitle=suptitle, **kw)
 
@@ -290,7 +290,7 @@ def transfer_inset(ax, labels, tam, surplus, E, ebar, muT, colors, tie_cap, titl
 
     Two bubbles — ``labels = (left, right)`` — each at the network panel's
     bus-bubble scale (s = max(3·MW, 200), MW from ``tam[label]`` = the addressable
-    market) and labelled with its net ``surplus[label]``. The connecting line
+    market) and labeled with its net ``surplus[label]``. The connecting line
     carries the transfer ``E``/``ebar`` (flow/limit); its width is ``ebar``
     relative to ``tie_cap`` (thin = tight). When ``muT`` ≠ 0 the line turns red and
     ``|muT|`` prints below it. ``E`` is signed left→right (positive = left exports).
@@ -378,7 +378,7 @@ def self_schedule_bars(engine, res, source=None, sink=None, mw=0.0, *,
                        sink_rest_price=None, served_by_source=False,
                        add_sink_demand=True, color=_SELFSCHED):
     """Build ``(sup_dem, demand_segments)`` that draw a price-taking self-schedule as a
-    distinct grey block — the single, shared convention across the series (101's one-sided
+    distinct gray block — the single, shared convention across the series (101's one-sided
     injection, 201's balanced gen→load, 205's cross-market trade), cleaner than the
     automatic ``exo_sched`` wedge. Pass the returned ``sup_dem`` / ``demand_segments``
     straight to :func:`footprint_figure` / :func:`transfer_figure` (they take over the
@@ -436,7 +436,7 @@ def draw_rights_arcs(ax, rights, coords=None, *, tier_colors=None, rad=0.22,
 
     ``rights`` is a list of dicts ``{'source','sink','mw', 'tier'?, 'honored'?}``:
     a curved arrow from the source bus to the sink bus, width growing with ``mw``,
-    coloured by ``tier`` ('inter' = inter-BA path right / WECC backbone, 'intra' =
+    colored by ``tier`` ('inter' = inter-BA path right / WECC backbone, 'intra' =
     intra-BA right) via ``tier_colors`` (default :data:`RIGHT_TIER_COLORS`). A
     ``honored=False`` right is drawn dashed (a curtailed / unfunded right). Drawn
     ON TOP of an existing network panel (e.g. the ``ax`` returned by
@@ -496,13 +496,13 @@ def rights_figure(net, pt, rights, *, fp=None, ties=None, coords=None,
     readable:
 
     * **Left -- the network.** Each ``rights`` entry (see :func:`draw_rights_arcs`)
-      is a POR->POD arc, width growing with MW, coloured by tier (inter-BA gold-path
-      vs intra-BA), labelled by **path only** (``2->7``). The physical, *superposed*
+      is a POR->POD arc, width growing with MW, colored by tier (inter-BA gold-path
+      vs intra-BA), labeled by **path only** (``2->7``). The physical, *superposed*
       award flow rides on the lines as a direction arrow + ``flow / limit`` (the
       share of capacity); any line the rights overload (``show_sft``) turns **red**
       -- the simultaneous-feasibility test failing, path-by-path rights colliding on
       the shared grid.
-    * **Right -- the rights table.** One row per right: ``Right`` (path, coloured to
+    * **Right -- the rights table.** One row per right: ``Right`` (path, colored to
       match its arc), scheduled ``MW``, and -- with ``show_atc`` -- the path's
       standalone ``ATC`` (:func:`atc.ttc`) and the ``%ATC`` booked.
 
@@ -522,8 +522,8 @@ def rights_figure(net, pt, rights, *, fp=None, ties=None, coords=None,
     aw = [atc.Award(r["source"], r["sink"], r["mw"]) for r in rights]
 
     overl = set(atc.overloaded_lines(pt, aw, monitored)) if show_sft else set()
-    # Base line colour: a caller-supplied map (e.g. by balancing authority) if given, else the
-    # gold WECC-path / grey scheme. An overload (SFT failing) flags red and overrides either.
+    # Base line color: a caller-supplied map (e.g. by balancing authority) if given, else the
+    # gold WECC-path / gray scheme. An overload (SFT failing) flags red and overrides either.
     def _base(l):
         if line_colors is not None:
             return line_colors.get(l, "#CBD0D3")
@@ -536,7 +536,7 @@ def rights_figure(net, pt, rights, *, fp=None, ties=None, coords=None,
     axt = fig.add_subplot(gs[0, 1]); axt.axis("off")
 
     # left: the network. The superposed-award flow rides on the lines (direction +
-    # flow/limit, red where the SFT fails); the rights are arcs labelled by path
+    # flow/limit, red where the SFT fails); the rights are arcs labeled by path
     # only -- the MW / ATC live in the table on the right.
     plot_network_topology(
         net, bus_colors=_BUS_COLORS() if bus_colors is None else bus_colors, bus_coords=coords,
@@ -583,7 +583,7 @@ def rights_figure(net, pt, rights, *, fp=None, ties=None, coords=None,
     for j in range(len(collab)):                          # header row
         tbl[(0, j)].set_text_props(fontweight="bold", color="white")
         tbl[(0, j)].set_facecolor("#34495E")
-    for i, col in enumerate(pathcols):                    # path cell coloured to its arc
+    for i, col in enumerate(pathcols):                    # path cell colored to its arc
         tbl[(i + 1, 0)].get_text().set_color(col)
         tbl[(i + 1, 0)].get_text().set_fontweight("bold")
     return fig

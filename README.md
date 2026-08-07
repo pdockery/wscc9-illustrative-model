@@ -73,6 +73,14 @@ packages and pulls in the helper modules automatically.
   idling capability, and the phantom congestion they price).
   [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pdockery/wscc9-illustrative-model/blob/main/204_seam_congestion_management.ipynb)
 
+- **204a · Two coordination designs — dividing the transmission element or dividing
+  the relief** — the firm flow entitlement (a standing quota on the coordinated line)
+  against freeze-and-share (caps set from a study when the rule triggers). Each design's
+  signature failure: the quota's phantom congestion, priced against a line with headroom;
+  freeze-and-share's detection risk and its baseline incentive. Both drawn from each
+  market's chair and as the combined power flow.
+  [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pdockery/wscc9-illustrative-model/blob/main/204a_seam_coordination_designs.ipynb)
+
 - **205 · Interchange at the seam** — the participant-to-participant problem: the seam
   dual gap (two prices at every bus), the scheduled interchange and the welfare it
   closes, a participant-initiated trade's four-leg settlement, the latency and risk of
@@ -124,6 +132,7 @@ packages and pulls in the helper modules automatically.
 | `201_congestion_revenue_allocation.ipynb` | Two-BA congestion-revenue allocation (Method 1/2) |
 | `202_market_seam.ipynb` | The engine as three sets on a shared network; two engines side by side; formulations, example, sandbox |
 | `204_seam_congestion_management.ipynb` | Superposition; under- vs over-accommodation; the two-settlement congestion rent and the reservation error |
+| `204a_seam_coordination_designs.ipynb` | Firm flow entitlement vs freeze-and-share; phantom congestion, detection risk, the baseline incentive; per-market and combined views |
 | `205_seam_interchange.ipynb` | The seam dual gap; scheduled interchange; trade latency and risk; the seam ledger |
 | `212_two_market_transfer.ipynb` | Two markets on three BAs; transfer, wheeling, accommodation, timing risk, sandbox |
 | `222_intertie_sp_gap_tie.ipynb` | Intertie schedule placement: SP-Tie vs GAP-Tie; phantom congestion; export as a demand bid; expected cost under cost uncertainty |

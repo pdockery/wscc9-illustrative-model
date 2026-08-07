@@ -18,7 +18,7 @@ shift-factor topology:
 
 * ``defs``        — ``{name: [bus, …]}`` the bus membership (the visible knob).
 * ``line_assign`` — ``{line: name|None}`` which footprint *manages* each line
-  (rent assignment / line colour); a line under nobody is unassigned (grey).
+  (rent assignment / line color); a line under nobody is unassigned (gray).
 * ``monitored``   — ``{name: [line, …]}`` each footprint's activated constraint
   set ℳ^M_act (optional; the seams notebook sets it explicitly).
 * ``areas``       — ``defs`` plus a single ``"Non-market"`` area if any bus sits
@@ -30,8 +30,8 @@ Two derivation modes feed ``line_assign``:
 * pass ``manage={name: [lines]}``  (the CRA ``BA_LINES`` style — explicit
   management), or
 * pass ``monitored={name: [lines]}`` (the seams ``MONITORED_LINES`` style); a
-  line monitored by exactly one footprint is coloured for it, by neither/both is
-  grey.
+  line monitored by exactly one footprint is colored for it, by neither/both is
+  gray.
 
 The bus membership stays a **visible** notebook knob; this module only derives
 the bookkeeping from it.
@@ -41,7 +41,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-#: Grey for a line assigned to no footprint (or to both).
+#: Gray for a line assigned to no footprint (or to both).
 UNASSIGNED_COLOR = "#AAB7B8"
 
 
@@ -52,7 +52,7 @@ class Footprints:
     names: tuple
     defs: dict                      # {name: [bus strings]}
     colors: dict                    # {name: hex}
-    line_assign: dict               # {line: name|None}  — management / colour
+    line_assign: dict               # {line: name|None}  — management / color
     monitored: dict                 # {name: [line]}     — activated set ℳ^M_act
     areas: dict                     # defs (+ 'Non-market' if any bus outside)
     ties: list                      # cross-footprint lines
@@ -100,10 +100,10 @@ class Footprints:
         """Footprints whose activated set ℳ^M_act contains line ``l``."""
         return [m for m in self.names if l in self.monitored.get(m, [])]
 
-    # ── colours / banding ────────────────────────────────────────────────
+    # ── colors / banding ────────────────────────────────────────────────
     def line_colors(self, pt):
-        """``{line: hex}`` — each managed line takes its footprint's colour;
-        a line assigned to nobody (or, in the monitored basis, to both) is grey."""
+        """``{line: hex}`` — each managed line takes its footprint's color;
+        a line assigned to nobody (or, in the monitored basis, to both) is gray."""
         return {
             l: (self.colors[self.line_assign[l]] if self.line_assign.get(l) else UNASSIGNED_COLOR)
             for l in pt.lines
@@ -135,15 +135,15 @@ def make(
     defs : dict
         ``{name: [buses]}`` — the (visible) bus membership of each footprint.
     colors : dict
-        ``{name: hex}`` — footprint colour.
+        ``{name: hex}`` — footprint color.
     manage : dict, optional
         ``{name: [lines]}`` explicit line management (CRA ``BA_LINES``). Each line
         may appear under at most one footprint; a line under nobody is unassigned.
     monitored : dict, optional
         ``{name: [lines]}`` activated constraint sets ℳ^M_act (seams
         ``MONITORED_LINES``). When ``manage`` is omitted, ``line_assign`` (the
-        colour basis) is derived from this: a line monitored by exactly one
-        footprint is coloured for it; by neither/both, grey.
+        color basis) is derived from this: a line monitored by exactly one
+        footprint is colored for it; by neither/both, gray.
     tie_label : str
         Display label for a cross-footprint line: ``"tie"`` or ``"seam"``.
     """
@@ -230,4 +230,4 @@ if __name__ == "__main__":
               monitored=MON, tie_label="seam")
     print("\nseam lines:", mk.ties)
     print("monitored by neither:", [l for l in pt.lines if not mk.monitored_by(l)] or "none")
-    print("Market A colour for line_2:", mk.line_colors(pt)["line_2"])
+    print("Market A color for line_2:", mk.line_colors(pt)["line_2"])

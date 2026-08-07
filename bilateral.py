@@ -17,7 +17,7 @@ affine demand, taking transmission prices as given -- with one teaching
 simplification: the generator is its OWN arbitrager (it holds the right and
 captures the spread), so there is no separate price-equalizing arbitrager and nodal
 spreads need not collapse to the transmission charge. (Hobbs's with-arbitrage variant
-is still strategic and equals a POOLCO Cournot clearing; it is NOT modelled here. The
+is still strategic and equals a POOLCO Cournot clearing; it is NOT modeled here. The
 ``competitive_clear`` benchmark is instead the perfectly competitive, price-taking
 efficient dispatch -- the yardstick that exposes the Cournot withholding wedge.)
 

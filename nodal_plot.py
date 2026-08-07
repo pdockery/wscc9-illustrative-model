@@ -618,11 +618,11 @@ def plot_nodal_circlize(
         marginal cost (the fill), the other the cleared LMP (the dashed line).
     bus_groups : dict, optional
         {bus: group_label}. When given (with more than one distinct group), an
-        outer band is drawn around each sector in its group's colour and each
-        contiguous run of a group is labelled (e.g. "BA-1", "BA-2") — so a
+        outer band is drawn around each sector in its group's color and each
+        contiguous run of a group is labeled (e.g. "BA-1", "BA-2") — so a
         multi-BA / multi-market ring shows which operator owns which quadrant.
     group_colors : dict, optional
-        {group_label: color_hex}. Colour for each group's outer band/label.
+        {group_label: color_hex}. Color for each group's outer band/label.
         Auto-filled from the bus palette if omitted.
     group_label_fontsize : float, optional
         Font size for the outer group labels. Defaults to ``label_fontsize``.
@@ -637,11 +637,11 @@ def plot_nodal_circlize(
         closest to the top.
     axis_key : bool
         If True, draw a small illustrative axis on one bar that follows the polar
-        layout — a radial arrow up the bar's left edge labelled "price" and an arc
-        bent along the track base labelled "volume" — showing that a bar's radial
+        layout — a radial arrow up the bar's left edge labeled "price" and an arc
+        bent along the track base labeled "volume" — showing that a bar's radial
         height encodes price and its tangential width encodes volume. Direction
         only (not a measured scale). Anchored to the first bar clockwise from the
-        top (skipping the demand-labelled bar), chosen dynamically so it does not
+        top (skipping the demand-labeled bar), chosen dynamically so it does not
         depend on any particular bus name/number. A legend-on-the-figure so the inner ring and chords
         explain themselves once.
 
@@ -649,7 +649,7 @@ def plot_nodal_circlize(
     -------
     fig : matplotlib Figure
     """
-    # Colours are assigned against the ORIGINAL bus order so they stay tied to
+    # Colors are assigned against the ORIGINAL bus order so they stay tied to
     # bus identity; the sector placement order is then set independently below.
     if bus_colors is None:
         bus_colors = assign_bus_colors(all_buses, supply_by_bus, demand_by_bus)
@@ -713,7 +713,7 @@ def plot_nodal_circlize(
     # --- Build Circos ---
     # `start` rotates the whole ring (degrees clockwise from 12 o'clock). If
     # `center_bus` is given, compute the start offset that lands that bus's
-    # sector centre exactly at 12 o'clock.
+    # sector center exactly at 12 o'clock.
     sector_dict = {f"Bus {b}": bus_sizes[b] for b in all_buses}
     _space = 5
     start_deg = start
@@ -787,8 +787,8 @@ def plot_nodal_circlize(
             bid_vol = gen['volume']
             price = gen['price']
             accepted = min(gen['accepted_volume'], bid_vol)
-            # Opt-in per-unit colour override (e.g. a grey self-schedule block
-            # inside an otherwise bus-coloured stack); default = bus colour.
+            # Opt-in per-unit color override (e.g. a gray self-schedule block
+            # inside an otherwise bus-colored stack); default = bus color.
             gcol = gen.get('color', bc)
             gcol_dark = _darken(gcol) if 'color' in gen else bc_dark
 
@@ -934,7 +934,7 @@ def plot_nodal_circlize(
 
         # LOAD side (right): demand bar, height = bus LMP. An opt-in
         # demand_segments entry splits the SAME total into consecutive
-        # segments, each with its own height/colour (e.g. the portion of a
+        # segments, each with its own height/color (e.g. the portion of a
         # load served by a self-schedule at the other market's price).
         if dem > 0:
             load_start = gw + (gap if gw > 0 else 0)
@@ -952,7 +952,7 @@ def plot_nodal_circlize(
                     scol = seg.get('color', bc)
                     scol_dark = _darken(scol) if 'color' in seg else bc_dark
                     # Per-segment alpha (default = the demand fill 0.35). A fainter
-                    # alpha draws e.g. shed/unserved load in the bus colour, the
+                    # alpha draws e.g. shed/unserved load in the bus color, the
                     # way idle generation capacity is drawn faint on the supply side.
                     track.rect(x0, x1, r_lim=(55, seg_top),
                                fc=scol, alpha=float(seg.get('alpha', 0.35)),
@@ -1000,7 +1000,7 @@ def plot_nodal_circlize(
 
         # --- Outer band: shadow-price ghost OR group (BA/market) band ---
         # When buses are grouped by operator, the (97,100) ring carries the
-        # group's colour band instead of the LMP ghost (the LMP is already the
+        # group's color band instead of the LMP ghost (the LMP is already the
         # load-bar height and, with lmp_line, a dashed line on the gen bars).
         if _draw_groups and bus in bus_groups:
             gcol = _group_colors.get(bus_groups[bus], TRANSIT_COLOR)
@@ -1017,7 +1017,7 @@ def plot_nodal_circlize(
                                   fc=bc, alpha=0.15, ec=bc, lw=0.3)
 
         # --- Inner ring: a "send" sub-bar under the generator and a "receive"
-        #     sub-bar under the load, in the same bus colour, so a bus with
+        #     sub-bar under the load, in the same bus color, so a bus with
         #     co-located gen + load shows its two roles separately. The gen→load
         #     chords (incl. the same-bus self-loop) then visibly run from the
         #     send bar to the receive bar. ---
@@ -1046,13 +1046,13 @@ def plot_nodal_circlize(
 
         # Bus label. A transit bus (no generation and no load) carries no price
         # worth surfacing here, so it mimics the network diagram's node — just
-        # the bus number inside a circle (a parenthesised "(N)" fallback if the
+        # the bus number inside a circle (a parenthesized "(N)" fallback if the
         # circle bbox can't be drawn). Active buses keep "Bus N" + their LMP.
         bus_lmp = _lmps.get(bus, 0)
         is_transit = (gw <= 0) and (dem <= 0)
         _dimmed = dim_buses is not None and bus in dim_buses
         if is_transit and _dimmed and bus_lmp > 0:
-            # A greyed bus OUTSIDE the modelled area: no gen/load here, but its LMP
+            # A grayed bus OUTSIDE the modeled area: no gen/load here, but its LMP
             # is defined (lambda + shift-factor congestion) -- surface just the price
             # ($/MWh, no "Bus N" label), the out-of-area price the ring still prices.
             sector.text(f"${bus_lmp:.1f}", r=104, fontsize=label_fontsize * 0.8,
@@ -1133,7 +1133,7 @@ def plot_nodal_circlize(
             load_cursor[dst] = dst_end
 
     # --- Group (BA / market) labels: one per contiguous run of a group ---
-    # Placed just outside the bus labels at the centre degree of each run so the
+    # Placed just outside the bus labels at the center degree of each run so the
     # multi-operator ring reads "this arc is BA-1, that arc is BA-2". Font held at
     # label_fontsize (group_label_fontsize to override) so it stays readable.
     if _draw_groups and show_group_labels:
@@ -1159,7 +1159,7 @@ def plot_nodal_circlize(
                                   ec=gcol, lw=1.2, alpha=0.95))
 
     # --- Read-the-chart labels: subtle "supply" / "demand" / "dispatch" near 12 --
-    # Styled like the in-bar MW numbers (small, bold, the bus's own dark colour,
+    # Styled like the in-bar MW numbers (small, bold, the bus's own dark color,
     # no box) and tucked INTO the relevant element: "supply" on the inner
     # send-bar, "demand" on the inner receive-bar, "dispatch" on a chord — each on
     # the element closest to the top, so the diagram explains itself once.
@@ -1199,7 +1199,7 @@ def plot_nodal_circlize(
             ls_, le_ = bus_load_range[lb]
             _hlabel('demand', lb, (ls_ + le_) / 2, 50.5,
                     _darken(bus_colors[lb], 0.55))
-        # dispatch: a flow chord near the top — small neutral label in the centre
+        # dispatch: a flow chord near the top — small neutral label in the center
         if flows and _load:
             _sec = circos.get_sector(f"Bus {lb}")
             _deg = _math.degrees(_sec.x_to_rad((ls_ + le_) / 2)) % 360
@@ -1218,7 +1218,7 @@ def plot_nodal_circlize(
     # Illustrative axis following the polar layout: a radial arrow up a bar's
     # left edge = "price", and an arc bent along the track base = "volume".
     # Direction only (not a measured scale). Anchored to the FIRST bus clockwise
-    # from the top that has a bar, skipping the demand-labelled bus — so it never
+    # from the top that has a bar, skipping the demand-labeled bus — so it never
     # crowds "demand" and is picked dynamically (no reliance on any bus number).
     if axis_key:
         _pax = ax if ax is not None else fig.axes[0]
@@ -1506,13 +1506,13 @@ def plot_network_topology(
         {line_name: linewidth}. Encodes a per-line drawing width — e.g. line
         "slipperiness" (susceptance b = 1/x; wider = lower reactance = carries
         more flow per unit angle). When given, width is this orthogonal channel
-        and colour still flags congestion (red). When None, the legacy behaviour
+        and color still flags congestion (red). When None, the legacy behavior
         applies (lw=2, lw=3 for constrained lines).
     line_colors : dict, optional
-        {line_name: color_hex}. The "ownership" colour of a line — e.g. the
+        {line_name: color_hex}. The "ownership" color of a line — e.g. the
         balancing authority / market that manages it. Used as the line's base
-        colour so the diagram reads which operator monitors which corridor. A
-        line absent from the dict stays grey (e.g. a tie that no single operator
+        color so the diagram reads which operator monitors which corridor. A
+        line absent from the dict stays gray (e.g. a tie that no single operator
         owns). Congestion (``constrained_lines``) still overrides to red on top
         of this — a congested line is red regardless of its owner.
     constrained_lines : set or list of str, optional
@@ -1521,8 +1521,8 @@ def plot_network_topology(
         overloaded lines. A line is drawn red **iff** it is in this set. This is
         the only thing that triggers the constrained (red) treatment: a line that
         merely reaches its rating because the generator behind it is maxed out
-        has μ = 0 and stays grey. When None (or a line is absent from the set),
-        the line is not constrained. Flow magnitude never drives the colour.
+        has μ = 0 and stays gray. When None (or a line is absent from the set),
+        the line is not constrained. Flow magnitude never drives the color.
     title : str, optional
     ax : matplotlib Axes, optional
     figsize : tuple
@@ -1581,13 +1581,13 @@ def plot_network_topology(
         # Red ONLY for genuinely constrained lines: those whose congestion shadow
         # price is non-zero (or are passed as overloaded). Flow merely reaching
         # the rating is NOT congestion — a radial line at its limit because the
-        # generator behind it is maxed out has zero shadow price and stays grey.
+        # generator behind it is maxed out has zero shadow price and stays gray.
         # A line is red iff it is in the caller-supplied set; with no set, none.
         constrained = (constrained_lines is not None
                        and line_name in constrained_lines)
-        # Colour priority: congestion red > owner (BA/market) colour > grey.
-        # A congested line is always red; otherwise it takes its owner's colour
-        # if one was supplied, and falls back to grey (e.g. an unowned tie).
+        # Color priority: congestion red > owner (BA/market) color > gray.
+        # A congested line is always red; otherwise it takes its owner's color
+        # if one was supplied, and falls back to gray (e.g. an unowned tie).
         if constrained:
             line_color = '#E74C3C'
         elif line_colors is not None and line_name in line_colors:
@@ -1595,7 +1595,7 @@ def plot_network_topology(
         else:
             line_color = '#AAB7B8'
         if line_widths is not None:
-            # Width encodes slipperiness (susceptance); colour still flags congestion.
+            # Width encodes slipperiness (susceptance); color still flags congestion.
             line_lw = line_widths.get(line_name, 2)
         else:
             line_lw = 3 if constrained else 2
@@ -1625,7 +1625,7 @@ def plot_network_topology(
 
         # Flow label: "flow/capacity" offset perpendicular to line (opt-out via
         # flow_labels=False). Skip lines carrying ~no flow so dead paths don't print
-        # a "0/limit" tag; a constrained line is always labelled.
+        # a "0/limit" tag; a constrained line is always labeled.
         if flow_labels and (abs(flow) > 0.5 or constrained):
             flow_label = f"{abs(flow):.0f}/{s_nom:.0f}"
             label_color = '#C0392B' if constrained else '#7F8C8D'
@@ -1643,7 +1643,7 @@ def plot_network_topology(
                     bbox=dict(fc='white', ec='none', alpha=0.8, pad=1))
 
     # --- Draw buses ---
-    # Chart centre (mean of the drawn buses) -- used to push per-bus labels
+    # Chart center (mean of the drawn buses) -- used to push per-bus labels
     # radially OUTWARD (left nodes label left, right right, top up, bottom down)
     # so the chips clear the line-flow tags instead of all shifting one way.
     _bxy = [coords[b] for b in all_buses if b in coords]
@@ -1668,7 +1668,7 @@ def plot_network_topology(
 
         # Bus number label. 'inside' = white number in the bubble (default);
         # 'outside' = dark number on a small chip beside the bubble, so the
-        # coloured marker stays clean for print at half-page width.
+        # colored marker stays clean for print at half-page width.
         if number_position == 'outside':
             ax.annotate(bus, (x, y), fontsize=node_number_fontsize,
                         fontweight='bold', color=bc_dark, zorder=6,
@@ -1686,7 +1686,7 @@ def plot_network_topology(
         # load -) in a green/maroon chip -- for a flow-focused panel where price is
         # better read off the dispatch ring; otherwise fall back to the LMP.
         if lmp_only:
-            # radial push-out: offset the chip away from the chart centre, and anchor
+            # radial push-out: offset the chip away from the chart center, and anchor
             # the text on the side facing the node so it reads outward.
             rdx, rdy = x - _cx, y - _cy
             rl = (rdx * rdx + rdy * rdy) ** 0.5 or 1.0
@@ -1713,7 +1713,7 @@ def plot_network_topology(
                             xytext=(ox, oy), textcoords='offset points', zorder=5)
             continue
 
-        # Build annotation text. Optional colour-matched node header so the info
+        # Build annotation text. Optional color-matched node header so the info
         # box is identifiable when the number is outside the bubble.
         annotations = []
         if box_node_header:
@@ -1761,8 +1761,8 @@ def plot_network_topology(
 
 def _shared_bus_legend_handles(all_buses, supply_by_bus, demand_by_bus,
                                bus_lmps, bus_colors):
-    """Build one colour-keyed legend entry per active bus carrying the bid and
-    LMP, so the two side-by-side panels need not repeat that text. Colour does
+    """Build one color-keyed legend entry per active bus carrying the bid and
+    LMP, so the two side-by-side panels need not repeat that text. Color does
     the matching: the same swatch identifies the bus in both panels."""
     supply_by_bus = supply_by_bus or {}
     demand_by_bus = demand_by_bus or {}
@@ -1830,9 +1830,9 @@ def plot_combined_letter(
     """Letter-size composite: network topology (left) + circlize/chord (right).
 
     Designed to drop onto one landscape Letter page with both panels sharing the
-    width and a single colour-keyed legend (bid size, bid, LMP) along the bottom,
+    width and a single color-keyed legend (bid size, bid, LMP) along the bottom,
     so nothing has to be repeated on each panel. Node numbers sit beside the
-    coloured bubbles (not inside), and the circlize sector labels are drawn at
+    colored bubbles (not inside), and the circlize sector labels are drawn at
     ``label_fontsize`` (10 by default) so they stay legible at half-page width.
 
     Parameters mirror ``plot_network_topology`` / ``plot_nodal_circlize``;
@@ -1862,7 +1862,7 @@ def plot_combined_letter(
                           box.width * (0.95 if _compact else 0.90),
                           box.height * (0.96 if _compact else 0.90)])
 
-    # Left: network topology -- numbers outside the bubble, colour-matched boxes.
+    # Left: network topology -- numbers outside the bubble, color-matched boxes.
     plot_network_topology(
         network, supply_by_bus, demand_by_bus,
         bus_colors=bus_colors, bus_lmps=(bus_lmps if network_show_lmp else None),

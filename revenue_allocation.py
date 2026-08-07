@@ -94,7 +94,7 @@ def settlement_by_bus(res, buses, loads, all_buses=None):
     the one-engine accounting of the fundamentals notebook.
 
     ``buses`` are the buses actually cleared/settled in this dispatch. Pass
-    ``all_buses`` to also list the buses OUTSIDE the dispatch (the greyed,
+    ``all_buses`` to also list the buses OUTSIDE the dispatch (the grayed,
     out-of-area buses of the per-BA autarky / accommodation views): the table then
     gains an ``in settlement`` (True/False) column, and an out-of-area bus shows its
     LMP but zero gen / load / payments (it carries no resources here). Without
@@ -289,7 +289,7 @@ def fp_interfaces(fp, pt, areas=None):
     FINER partition than the footprints — the WECC two-level structure, where
     BA areas nest inside market-engine footprints and the per-BA interfaces are
     what ``solve_engine_transfers`` schedules over. Default: the footprints
-    themselves (the two-level structure collapsed, today's behaviour)."""
+    themselves (the two-level structure collapsed, today's behavior)."""
     if areas is not None:
         a_of = {str(b): a for a, bs in areas.items() for b in bs}
         out: dict = {}
@@ -973,7 +973,7 @@ def transfer_ledger(fp, res, p, loads, method, t_method, indep, transfer_split, 
 
 
 # ──────────────────────────────────────────────────────────────────────────
-# Self-schedule incentive (how an allocation RULE changes behaviour)
+# Self-schedule incentive (how an allocation RULE changes behavior)
 # ──────────────────────────────────────────────────────────────────────────
 def self_schedule_ledger(fp, ebar, source, sink, mw, *, ratings=None,
                          gen_fleet=None, loads=None):
@@ -983,7 +983,7 @@ def self_schedule_ledger(fp, ebar, source, sink, mw, *, ratings=None,
     the exporting area sits at its cheap unit while the importing area sits at its
     dear unit -- the price gap a firm right spans. A resource at bus ``source``
     whose LMP sits below its cost is OFF in the economic clearing. A balanced firm
-    self-schedule of ``mw`` from ``source`` to ``sink`` (modelled as the
+    self-schedule of ``mw`` from ``source`` to ``sink`` (modeled as the
     price-taking injection ``exo={source: +mw}``; because export is capped, the
     cheap exporter backs down by ``mw``) forces it ON. Under a rule that REBATES
     the schedule's out-of-area congestion charge ``(lmp_sink - lmp_source)*mw``,
@@ -1354,15 +1354,15 @@ def loop_flow_triangle(fp, ratings, host, nbr, *, gen_fleet=None, loads=None,
     """The "circular finger-pointing" triangle for a constraint internal to ``host``.
 
     One unified clearing on the ``ratings`` network. For each binding line the host manages,
-    split the flow into the host's own contribution and the NEIGHBOUR's parallel flow,
+    split the flow into the host's own contribution and the NEIGHBOR's parallel flow,
     ``F_m = F_m^host + F_m^nbr`` with ``F_m^a = sum_{n in a} SF_{m,n}(g_n - d_n)``, and read the
     one shadow price ``mu_m`` three ways -- the three claims that point in a circle:
 
-      * **host -> nbr** (pay for the neighbour's parallel flow on the host's line):
+      * **host -> nbr** (pay for the neighbor's parallel flow on the host's line):
         ``-sum_m mu_m F_m^nbr``;
       * **nbr -> host** (compensate the price separation the constraint makes at the
-        neighbour's nodes): ``N_nbr^c = sum_{n in nbr}(lambda_n - lambda)(d_n - g_n)``;
-      * **host redispatch** (the production-cost penalty of hosting the neighbour's parallel
+        neighbor's nodes): ``N_nbr^c = sum_{n in nbr}(lambda_n - lambda)(d_n - g_n)``;
+      * **host redispatch** (the production-cost penalty of hosting the neighbor's parallel
         flow versus a "no parallel flow" baseline in which the host had the full line):
         ``PC(ratings) - PC(ratings relaxed by F_m^nbr)``.
 
@@ -1487,7 +1487,7 @@ def methodology_ledger(fp, alloc, indep, resU, loads=None, cost=None):
     position bookend). Homework-style ledger: per BA, consumers and generators side
     by side, the autarky position (each BA on its own engine on the full network),
     the unified position with the allocation ``A`` rebated to consumers, the change,
-    and a Pareto (``Delta >= 0``) flag. Generalises :func:`autarky_vs_unified` to an
+    and a Pareto (``Delta >= 0``) flag. Generalizes :func:`autarky_vs_unified` to an
     arbitrary allocation dict -- the methodology-comparison frame. The unified
     positions sum to ``-(production cost)``.
     """
@@ -1787,8 +1787,8 @@ def parallel_flow_attribution(fp, res, pt, loads=None):
     reference bus. The rent collected on the line is ``|mu_l F_l|``; a share is
     NEGATIVE when the positions counterflow (relieve) the line. For an INTERNAL
     line, the manager BA's share is its own self-caused congestion and the other
-    BA's share is the **parallel (loop) flow** it imposes on a neighbour's facility
-    -- the congestion at the centre of the hold-harmless dispute. Returns a tidy
+    BA's share is the **parallel (loop) flow** it imposes on a neighbor's facility
+    -- the congestion at the center of the hold-harmless dispute. Returns a tidy
     table over the binding lines (one column pair per BA plus the Transfer pair).
     """
     loads = _case().loads if loads is None else loads
@@ -1823,16 +1823,16 @@ def parallel_flow_attribution(fp, res, pt, loads=None):
 
 
 def loop_flow_charge(fp, res, pt, host, nbr, loads=None):
-    """The neighbour's parallel-flow value on the host's binding lines, at the market price.
+    """The neighbor's parallel-flow value on the host's binding lines, at the market price.
 
     For every line INTERNAL to ``host`` that binds, take its shadow price ``mu_m`` and the
-    NEIGHBOUR's contribution to its flow, ``F_m^{nbr} = sum_{n in nbr} SF_{n,m}(g_n - d_n)``
+    NEIGHBOR's contribution to its flow, ``F_m^{nbr} = sum_{n in nbr} SF_{n,m}(g_n - d_n)``
     (hub-relative shift factors, so the split is reference-bus-invariant), and return
 
         tau = - sum_m mu_m F_m^{nbr}
 
     -- the ``loop_flow_triangle`` host->nbr leg, identically equal to ``N_nbr^c`` and to the
-    host's marginal redispatch cost. It is SIGNED: negative in an interval whose neighbour
+    host's marginal redispatch cost. It is SIGNED: negative in an interval whose neighbor
     flow relieves the constraint. Returns 0.0 when no host-internal line binds.
     """
     loads = _case().loads if loads is None else loads

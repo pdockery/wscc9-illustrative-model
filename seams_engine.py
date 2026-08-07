@@ -19,12 +19,12 @@ The objects map one-to-one onto the paper's notation:
     EngineResult.flow_own       F^M_{m,t}   engine M's *own* flow component   (6)
     physical_flows()        F^phys_{m,t} = Σ_M F^M_{m,t} + F^non   superposition (30)
 
-Each engine optimises **only its own resources and loads**, enforces limits
+Each engine optimizes **only its own resources and loads**, enforces limits
 **only on its own activated constraint set**, and computes flow **only against
 its own injections** (eq. 6). Cross-engine injections enter as fixed,
 price-taking schedules (``exo`` argument). The physical flow on any line is the
 superposition of every engine's own component (eq. 30) — which is what produces
-the overloads and price gaps the paper formalises.
+the overloads and price gaps the paper formalizes.
 
 The DC-OPF is solved with ``scipy.optimize.linprog(method="highs")``; the LMP
 decomposition is read directly off the HiGHS dual variables, so the nodal price
@@ -99,9 +99,9 @@ def compute_ptdf(network, slack_bus: str | None = None, method: str = "auto",
     Parameters
     ----------
     method : "auto" | "dense" | "sparse"
-        ``dense`` is the original full matrix inverse; ``sparse`` factorises the
+        ``dense`` is the original full matrix inverse; ``sparse`` factorizes the
         reduced susceptance matrix with SuperLU and back-solves one RHS per bus
-        (the WECC map-mirror's 1883-node case factorises in milliseconds where
+        (the WECC map-mirror's 1883-node case factorizes in milliseconds where
         the dense inverse would be avoidable work). ``auto`` = dense below 200
         buses — so the teaching case NEVER enters the new code path — else sparse.
     bus_order : list, optional
@@ -155,7 +155,7 @@ def compute_ptdf(network, slack_bus: str | None = None, method: str = "auto",
         # Sparse LU on the reduced susceptance matrix, one back-solve per line.
         # PTDF row m = b_m · [B_red⁻¹ (e_{bus0(m)} − e_{bus1(m)})]ᵀ on the kept
         # buses (B is symmetric). At the WECC map-mirror's 1883 nodes this
-        # factorises in milliseconds and back-solves ~0.2 ms/line.
+        # factorizes in milliseconds and back-solves ~0.2 ms/line.
         import scipy.sparse as _sp
         from scipy.sparse.linalg import factorized as _factorized
 
@@ -277,7 +277,7 @@ def identity_flowgates(pt: PTDFData, lines="all", s_max_pu: float = 1.0) -> Flow
 # ──────────────────────────────────────────────────────────────────────────
 @dataclass
 class MarketEngine:
-    """One independent optimisation over a subset of the shared network.
+    """One independent optimization over a subset of the shared network.
 
     Attributes
     ----------
@@ -332,6 +332,7 @@ class EngineResult:
     transfers: dict | None = None            # {(a,b) sorted: net SCHEDULED t a→b, min-total-schedule tags}
     transfer_duals: dict | None = None       # {(a,b) sorted: signed μ_T^{ab} (λ̂_b − λ̂_a when the limit binds)}
     transfer_limits: dict | None = None      # {(a,b) sorted: released capacity T̄_ab (None = unlimited)}
+    transfer_violations: dict = field(default_factory=dict)  # {(a,b) sorted: signed VRL violation MW (interface_vrl only)}
 
 
 def solve_engine_dispatch(
@@ -354,14 +355,14 @@ def solve_engine_dispatch(
         Resource/load/activated-constraint partition.
     exo : dict, optional
         ``{bus: MW}`` price-taking exogenous injections (positive = injection
-        into this engine's footprint). This is how a neighbouring engine's
+        into this engine's footprint). This is how a neighboring engine's
         export shows up: a fixed, price-insensitive schedule (paper §2.3, §4.2).
     flow_offsets : dict, optional
         ``{line: MW}`` signed flow (in each line's reference direction) that
         this engine *accommodates* on its activated limits: the limit is
         enforced on ``F^M_m + offset_m`` rather than on ``F^M_m`` alone, so the
         engine leaves room for another party's anticipated flow. The offset is
-        exogenous to the optimisation (an ATC-style reservation), not a
+        exogenous to the optimization (an ATC-style reservation), not a
         decision variable. Default ``None`` leaves the limits unchanged.
     shed_price : float, optional
         Power-balance relaxation penalty, $/MWh (load shedding). When set, an
@@ -398,7 +399,7 @@ def solve_engine_dispatch(
         carries the IMPLIED per-line duals ``Sᵀμ`` so every downstream ledger
         and figure reads unchanged; ``fg_dual``/``fg_flow``/``fg_limit`` carry
         the flowgate layer itself. Default ``None`` = per-line limits (the
-        original behaviour, byte-identical).
+        original behavior, byte-identical).
     dc_links : dict, optional
         Controllable radial HVDC ties (PDCI, IPP, …): ``{link_id: {"bus0",
         "bus1", "p_max", "p_min"}}``. Each link adds ONE signed dispatch
@@ -737,7 +738,7 @@ def solve_engine_qp(
     for j in range(K):
         # An interior shed variable is marginal exactly like an interior generator:
         # its flat cost is the shed price, so stationarity pins its bus at V
-        # (the flat LP's behaviour). Without these rows an interval whose only
+        # (the flat LP's behavior). Without these rows an interval whose only
         # marginal variable is shed leaves the KKT system empty.
         if tol < u_opt[j] < shed_cap[j] - tol:
             rowc = [1.0] + [Hmat[l, pt.bus_idx[shed_bus[j]]] for l in binding]
@@ -815,6 +816,9 @@ def solve_engine_transfers(
     tol: float = 1e-3,
     flowgates: FlowgateSet | None = None,
     dc_links: dict | None = None,
+    interface_vrl: float | None = None,
+    fixed_transfers: dict | None = None,
+    flow_offsets: dict | None = None,
 ) -> EngineResult:
     """Clear one engine in the EDAM-literal form: one power balance PER AREA
     (dual ``λ̂_a``, the per-BAA energy price) tied together by directional
@@ -862,6 +866,40 @@ def solve_engine_transfers(
         PHYSICAL variable per link (unlike the flow-inert scheduled
         transfers, a link moves real flow AND both end-areas' balances).
         Both ends must lie in declared areas. Not supported with ``curves``.
+    interface_vrl : float, optional
+        Violation Relaxation Limit for the released-capacity constraints,
+        $/MWh (SPP-style; Markets+ carries a $3,000 VRL on its transfer
+        interface). When set, each finite ``t_ab ≤ T̄_ab`` becomes
+        ``t_ab − s_ab ≤ T̄_ab`` with a violation variable ``s_ab ≥ 0`` priced
+        at the VRL in the objective: a schedule may exceed the released
+        capacity only at that penalty, the interface shadow price is CAPPED
+        at the VRL, and scarcity that would otherwise be an infeasibility
+        becomes a priced violation (reported in ``transfer_violations``).
+        An interface ABSENT from ``interfaces`` stays structurally absent —
+        no variable exists, so no penalty can buy a schedule on it. Default
+        ``None`` keeps every released capacity hard. LP only (not
+        ``curves``); the violation MW is excluded from ``total_cost``
+        (production cost), like the shed penalty.
+    fixed_transfers : dict, optional
+        ``{(a, b): signed MW}`` — SELF-SCHEDULED tags. Each named pair's
+        schedule is pinned at the given value (positive = the sorted-first
+        area exports) instead of being optimized: the tag is price-taking,
+        consumes the pair's released capacity like any schedule, and the
+        engine optimizes only the remaining transfers — while the exporting
+        area's balance must SUPPORT the pinned export from its own resources.
+        Institutionally this is interchange with counterparties OUTSIDE a
+        market footprint: the historic pairwise schedule is a fact the market
+        carries, not a decision it makes — and when two engines study the
+        same interval, passing the SAME dict to both keeps their cross-seam
+        books consistent. Each pinned pair must be declared in
+        ``interfaces`` and fit its released capacity (clear errors
+        otherwise). LP only (not ``curves``).
+    flow_offsets : dict, optional
+        ``{constraint_id: MW}`` signed accommodated flow added to each
+        activated constraint's computed flow before its limits are checked,
+        exactly as in ``solve_engine_dispatch`` — the ex-ante reservation
+        hook. Keys name flowgate ids when ``flowgates`` is given, line ids
+        otherwise. Reported flows exclude the offset.
 
     Returns
     -------
@@ -942,7 +980,24 @@ def solve_engine_transfers(
     link_lo = [float(dc_links[l].get("p_min", 0.0)) for l in link_ids]
     link_hi = [float(dc_links[l]["p_max"]) for l in link_ids]
 
-    N = G + K + 2 * P + Lk                # g, u, (fwd, rev) per interface, links
+    if interface_vrl is not None and curves:
+        raise NotImplementedError("interface_vrl with rising-MC curves is not supported")
+    if fixed_transfers and curves:
+        raise NotImplementedError("fixed_transfers with rising-MC curves is not supported")
+    # VRL relaxation: one violation variable per FINITE-capped direction. An
+    # interface absent from `interfaces` has no variable at all -- the VRL
+    # cannot buy a schedule on a relationship that does not exist.
+    vrl_cols: list[int] = []
+    vrl_caps: list[float] = []
+    if interface_vrl is not None:
+        for p_, v_ in enumerate(lims):
+            if v_ is not None:
+                for d_ in (0, 1):
+                    vrl_cols.append(G + K + 2 * p_ + d_)
+                    vrl_caps.append(float(v_))
+    S_v = len(vrl_cols)
+
+    N = G + K + 2 * P + Lk + S_v          # g, u, (fwd, rev) per interface, links, VRL slacks
     a_idx = {a: r for r, a in enumerate(names)}
 
     # ── Per-area balances:  Σ_a g + Σ_a u − Σ_out t + Σ_in t = load_a ──────
@@ -977,6 +1032,7 @@ def solve_engine_transfers(
     else:
         act = [cidx[str(l)] for l in engine.activated_lines]
     Ffix = Hmat @ (exo_vec - load_vec)
+    offsets = {str(k): float(v) for k, v in (flow_offsets or {}).items()}
     flow_rows = np.zeros((len(act), N))
     for r, l in enumerate(act):
         for i, gb in enumerate(gen_bus):
@@ -988,17 +1044,44 @@ def solve_engine_transfers(
                                                - Hmat[l, pt.bus_idx[b0]])
 
     t_ub = np.array([np.inf if v is None else v for v in lims for _ in (0, 1)])
-    lo = np.concatenate([np.zeros(G + K + 2 * P), np.array(link_lo)])
-    hi = np.concatenate([cap, shed_cap, t_ub, np.array(link_hi)])
+    t_ub1 = np.full(2 * P, np.inf) if S_v else t_ub    # VRL: caps move to rows
+    lo = np.concatenate([np.zeros(G + K + 2 * P), np.array(link_lo), np.zeros(S_v)])
+    hi = np.concatenate([cap, shed_cap, t_ub1, np.array(link_hi),
+                         np.full(S_v, np.inf)])
+    # ── Self-scheduled tags: pin the pair's directional variables ──────────
+    fixed_idx: dict[int, float] = {}          # directional column -> pinned MW
+    if fixed_transfers:
+        pair_of = {k: p for p, k in enumerate(ifc)}
+        for k, v in fixed_transfers.items():
+            key = tuple(sorted((str(k[0]), str(k[1]))))
+            if key not in pair_of:
+                raise ValueError(f"fixed transfer {key} is not a declared interface")
+            p_ = pair_of[key]
+            if lims[p_] is not None and abs(float(v)) > lims[p_] + 1e-6:
+                raise ValueError(
+                    f"fixed transfer {key} = {float(v):+.1f} MW exceeds its "
+                    f"released capacity {lims[p_]:.1f} MW")
+            t_ = float(v)
+            fixed_idx[G + K + 2 * p_] = max(t_, 0.0)
+            fixed_idx[G + K + 2 * p_ + 1] = max(-t_, 0.0)
+        for c_, v_ in fixed_idx.items():
+            lo[c_] = hi[c_] = v_
 
     if not curves:
         # ---- flat-offer LP (HiGHS) ----------------------------------------
         c_vec = np.concatenate([a_c, np.full(K, float(shed_price)) if K else np.zeros(0),
-                                np.zeros(2 * P + Lk)])
+                                np.zeros(2 * P + Lk),
+                                np.full(S_v, float(interface_vrl or 0.0))])
         A_ub, b_ub = [], []
         for r, l in enumerate(act):
-            A_ub.append(flow_rows[r]);  b_ub.append(fwd[l] - Ffix[l])
-            A_ub.append(-flow_rows[r]); b_ub.append(rev[l] + Ffix[l])
+            off_ = offsets.get(cids[l], 0.0)           # accommodated flow (signed)
+            A_ub.append(flow_rows[r]);  b_ub.append(fwd[l] - Ffix[l] - off_)
+            A_ub.append(-flow_rows[r]); b_ub.append(rev[l] + Ffix[l] + off_)
+        for k2, (col_, cap_) in enumerate(zip(vrl_cols, vrl_caps)):
+            row_ = np.zeros(N)
+            row_[col_] = 1.0
+            row_[G + K + 2 * P + Lk + k2] = -1.0       # t - s <= T-bar
+            A_ub.append(row_); b_ub.append(cap_)
         res = linprog(c_vec, A_ub=np.array(A_ub) if A_ub else None,
                       b_ub=np.array(b_ub) if b_ub else None,
                       A_eq=A_bal, b_eq=b_bal,
@@ -1024,8 +1107,11 @@ def solve_engine_transfers(
         cons = [LinearConstraint(A_bal, b_bal, b_bal)]
         if act:
             cons.append(LinearConstraint(
-                flow_rows, np.array([-rev[l] - Ffix[l] for l in act]),
-                np.array([fwd[l] - Ffix[l] for l in act])))
+                flow_rows,
+                np.array([-rev[l] - Ffix[l] - offsets.get(cids[l], 0.0)
+                          for l in act]),
+                np.array([fwd[l] - Ffix[l] - offsets.get(cids[l], 0.0)
+                          for l in act])))
         x0 = np.minimum(np.where(np.isinf(hi), load_vec.sum(), hi),
                         np.full(N, load_vec.sum() / max(N, 1)))
         r = minimize(lambda z: 0.5 * z @ (H @ z) + c_lin @ z, x0,
@@ -1035,8 +1121,10 @@ def solve_engine_transfers(
                      options={"gtol": 1e-10, "xtol": 1e-12, "maxiter": 3000})
         x = r.x
         binding = [l for rr, l in enumerate(act)
-                   if flow_rows[rr] @ x + Ffix[l] > fwd[l] - 1e-4
-                   or flow_rows[rr] @ x + Ffix[l] < -(rev[l] - 1e-4)]
+                   if flow_rows[rr] @ x + Ffix[l] + offsets.get(cids[l], 0.0)
+                   > fwd[l] - 1e-4
+                   or flow_rows[rr] @ x + Ffix[l] + offsets.get(cids[l], 0.0)
+                   < -(rev[l] - 1e-4)]
         # KKT unknowns: [λ̂_a … , μ_l for binding lines]; rows from interior
         # generators/shed (marginal cost pins its area's price + congestion) and
         # interior transfers (a slack interface with flow ties its two λ̂ together).
@@ -1078,6 +1166,7 @@ def solve_engine_transfers(
 
     g_opt, u_opt = x[:G], x[G:G + K]
     t_link = x[G + K + 2 * P:G + K + 2 * P + Lk]
+    s_viol = x[G + K + 2 * P + Lk:G + K + 2 * P + Lk + S_v] if S_v else np.zeros(0)
 
     # ── Stage two: the tags — minimal total scheduled MW at this dispatch ──
     # An area's INTERFACE-borne position is its generation surplus plus what
@@ -1094,8 +1183,16 @@ def solve_engine_transfers(
     if P:
         A_t = A_bal[:A - 1, G + K:G + K + 2 * P]          # drop one redundant balance row
         b_t = np.array([-ex[a] for a in names[:A - 1]])   # −Σ_out t + Σ_in t = −e_a^out
+        t_ub2 = t_ub.copy()                               # tags may carry awarded violations
+        for k2, col_ in enumerate(vrl_cols):
+            t_ub2[col_ - (G + K)] += float(s_viol[k2])
+        t_lo2 = np.zeros(2 * P)
+        for c_, v_ in fixed_idx.items():                  # pinned tags stay pinned
+            t_lo2[c_ - (G + K)] = v_
+            t_ub2[c_ - (G + K)] = v_
         r2 = linprog(np.ones(2 * P), A_eq=A_t, b_eq=b_t,
-                     bounds=[(0, None if np.isinf(u) else u) for u in t_ub],
+                     bounds=[(l_, None if np.isinf(u) else u)
+                             for l_, u in zip(t_lo2, t_ub2)],
                      method="highs")
         if not r2.success:
             raise RuntimeError(f"transfer tagging stage infeasible: {r2.message}")
@@ -1103,6 +1200,15 @@ def solve_engine_transfers(
             transfers[k] = float(r2.x[2 * p] - r2.x[2 * p + 1])
             if abs(transfers[k]) < 1e-9:
                 transfers[k] = 0.0
+
+    transfer_violations = {}
+    for k2, col_ in enumerate(vrl_cols):
+        if s_viol[k2] > 1e-9:
+            p_ = (col_ - (G + K)) // 2
+            sgn = 1.0 if (col_ - (G + K)) % 2 == 0 else -1.0
+            k_ = ifc[p_]
+            transfer_violations[k_] = (transfer_violations.get(k_, 0.0)
+                                       + sgn * float(s_viol[k2]))
 
     # Signed interface duals: λ̂_b − λ̂_a wherever the pair's limit binds.
     transfer_duals = {}
@@ -1161,6 +1267,7 @@ def solve_engine_transfers(
         transfers=transfers,
         transfer_duals=transfer_duals,
         transfer_limits={k: lims[p] for p, k in enumerate(ifc)},
+        transfer_violations=transfer_violations,
         fg_dual=fg_dual,
         fg_flow={cids[k]: float(Hmat[k] @ inj) for k in range(len(cids))},
         fg_limit={cids[k]: (float(fwd[k]), float(rev[k]))
@@ -1257,7 +1364,7 @@ def to_supply_demand(
 def shed_segments(result, demand_by_bus, shed_alpha=0.12):
     """A ``nodal_plot`` ``demand_segments`` dict that renders shed (unserved) load
     as a faint tail: each shed bus's load bar splits into a served segment (bus
-    colour at the demand fill) plus an unserved segment in the SAME bus colour at
+    color at the demand fill) plus an unserved segment in the SAME bus color at
     the fainter ``shed_alpha`` — the convention used for idle generation capacity.
     Returns ``{}`` when nothing sheds, so ``shed_segments(...) or None`` is a clean
     default.
@@ -1268,7 +1375,7 @@ def shed_segments(result, demand_by_bus, shed_alpha=0.12):
             continue
         served = float(demand_by_bus.get(str(b), 0.0)) - u
         segs[str(b)] = ([{"mw": served}] if served > 0.5 else []) \
-            + [{"mw": u, "alpha": shed_alpha}]   # bus colour (inherited), faint
+            + [{"mw": u, "alpha": shed_alpha}]   # bus color (inherited), faint
     return segs
 
 

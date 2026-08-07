@@ -13,7 +13,7 @@ two primitive modules and adds the one fixed teaching set-up they all reuse:
 
 On that base it pins down the **teaching fleet** (which unit sits where, at what
 cost), the **load pattern**, and the **drawing layout** (ring order, rotation,
-bus colours) so that every notebook — and every figure within a notebook — reads
+bus colors) so that every notebook — and every figure within a notebook — reads
 the same way.
 
 Design rule (the notebooks keep their knobs visible): this module holds *logic*
@@ -109,15 +109,15 @@ RING_ORDER = ["3", "6", "7", "8", "2", "9", "4", "1", "5"]
 #: Node-diagram rotation (deg): bus 3 at the bottom, bus 2 NW, bus 9 at top.
 ROTATION_DEG = 180
 
-#: Circlize centre: bus 9 placed across 12 o'clock.
+#: Circlize center: bus 9 placed across 12 o'clock.
 CENTER_BUS = "9"
 
 #: Rotated bus coordinates for the network topology panel.
 COORDS = nodal_plot.rotate_coords(nodal_plot.IEEE9_COORDS, ROTATION_DEG)
 
-#: Canonical per-bus colours, assigned ONCE from the full fleet (which buses host
+#: Canonical per-bus colors, assigned ONCE from the full fleet (which buses host
 #: gen/load) so every figure — unified, scenario, or per-footprint — uses the
-#: SAME colour for a given bus. A subset clearing never restarts the palette.
+#: SAME color for a given bus. A subset clearing never restarts the palette.
 _sup_full: dict[str, list] = {}
 for _g, _s in DEFAULT_GEN_FLEET.items():
     _sup_full.setdefault(_s["bus"], []).append(_s)
@@ -136,7 +136,7 @@ def build_network(line_ratings: dict | None = None, split_5_6: bool = False):
         ``{line: MW}`` overrides applied to ``s_nom`` (e.g. ``{'line_4': 40}``).
         Applied AFTER any disaggregation, so a split circuit can still be re-rated.
     split_5_6 : bool, optional
-        If True, the 5-6 interface ``line_2`` is modelled as a parallel DOUBLE
+        If True, the 5-6 interface ``line_2`` is modeled as a parallel DOUBLE
         CIRCUIT — one circuit per balancing authority. ``line_2`` is disaggregated
         by the standard PyPSA-Eur/Earth rule: N circuits each carry ``s_nom/N`` at
         ``N·x`` (and ``N·r``), so the pair is electrically IDENTICAL to the single
@@ -229,7 +229,7 @@ def make_engine(
     name : str
         Engine label.
     buses : iterable
-        The bus set this engine optimises over.
+        The bus set this engine optimizes over.
     gen_fleet, loads : dict, optional
         Override the canonical fleet/loads (default ``DEFAULT_GEN_FLEET`` /
         ``DEFAULT_LOADS``) — the visible-knob hook for a notebook EDIT cell.
@@ -259,7 +259,7 @@ class WSCC9Case:
     ``build()`` returns a FRESH network each call and caches only the PTDF:
     notebooks mutate networks and engines in place, so a shared Network object
     would leak state between cells; the PTDF is a pure function of
-    (ratings, variant) and is safe to memoise.
+    (ratings, variant) and is safe to memoize.
     """
 
     name = "WSCC-9"
@@ -359,8 +359,8 @@ if __name__ == "__main__":
     pt = shift_factors()
     print("fleet:", {g: (s["bus"], s["cost"], s["p_nom"]) for g, s in DEFAULT_GEN_FLEET.items()})
     print("loads:", DEFAULT_LOADS)
-    print("ring order:", RING_ORDER, "| rotation", ROTATION_DEG, "| centre", CENTER_BUS)
-    print("bus colours:", BUS_COLORS)
+    print("ring order:", RING_ORDER, "| rotation", ROTATION_DEG, "| center", CENTER_BUS)
+    print("bus colors:", BUS_COLORS)
     print("\nshift factors (slack = bus 1):")
     print(sf_table(pt))
 
