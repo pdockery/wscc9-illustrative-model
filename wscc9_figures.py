@@ -757,3 +757,132 @@ if __name__ == "__main__":
     fig = composite_figure(net, pt, fp, eng, res, suptitle="smoke test")
     fig.savefig("_fig_smoke.png", dpi=70, bbox_inches="tight")
     print("composite_figure OK ->", fig.get_size_inches(), "saved _fig_smoke.png")
+def install_latex_repr():
+    """Booktabs LaTeX rendering for DataFrames on PDF export (HTML tables stay
+    in Jupyter). No effect outside an IPython session."""
+    import pandas as pd
+
+    def _df_to_latex(df):
+        if isinstance(df, pd.Series):
+            df = df.to_frame()
+        body = df.to_latex(escape=True, na_rep='',
+                           float_format=lambda v: f'{(0.0 if v == 0 else v):,.6g}')
+        ncol = df.shape[1] + df.index.nlevels
+        if ncol > 6:
+            return '\\begin{center}\\resizebox{\\linewidth}{!}{%\n' + body + '}\\end{center}'
+        return '\\begin{center}{\\small\n' + body + '}\\end{center}'
+
+    try:
+        from IPython import get_ipython
+        ip = get_ipython()
+        if ip is None:
+            return
+        ltx = ip.display_formatter.formatters['text/latex']
+        ltx.for_type(pd.DataFrame, _df_to_latex)
+        ltx.for_type(pd.Series, _df_to_latex)
+    except Exception:
+        pass
+
+
+def award_supply_demand(awards):
+    """Net injection per bus from point-to-point awards (source +, sink -),
+    rendered as the supply/demand annotations the network figure takes."""
+    inj = {}
+    for a in awards:
+        inj[a.source] = inj.get(a.source, 0.0) + a.mw
+        inj[a.sink] = inj.get(a.sink, 0.0) - a.mw
+    sup, dem = {}, {}
+    for b, v in inj.items():
+        if v > 1e-6:
+            sup.setdefault(b, []).append(
+                {'unit_id': f'POR@{b}', 'price': 0.0, 'volume': v,
+                 'accepted_volume': v, 'capacity': v})
+        elif v < -1e-6:
+            dem[b] = -v
+    return sup, dem
+
+
+def award_figure(pt, awards, title, net=None, monitored='all'):
+    """Draw an ATC award set on the network: the drawn line flows are the
+    award flows (an infeasible set shows its overloads in red)."""
+    import atc
+    import matplotlib.pyplot as plt
+    import wscc9_model as _wm
+    net = _wm.build_network() if net is None else net
+    sup, dem = award_supply_demand(awards)
+    plot_network_topology(
+        net, supply_by_bus=sup, demand_by_bus=dem,
+        bus_colors=_wm.BUS_COLORS, bus_coords=_wm.COORDS,
+        line_flows=atc.flow_dict(pt, awards),
+        constrained_lines=set(atc.overloaded_lines(pt, awards, monitored)),
+        title=title)
+    plt.show()   # display once; returning the fig too would double it inline
+def bilateral_dispatch_figure(pt, da, suppliers, title, monitored='all',
+                              line_ratings=None):
+    """The bilateral clearing on the network + nodal dispatch letter.
+    GENERATORS: the solid bar is the FIXED marginal cost; the dotted staircase
+    over it is the band of cleared (sale) prices its blocks fetched. LOADS:
+    the receive-bar is segmented by the prices paid. Chords are the actual
+    bilateral gen->load contracts. ``da`` is a bilateral OrderBookResult
+    (trades / cleared / awards / premium)."""
+    import atc
+    import matplotlib.pyplot as plt
+    import wscc9_model as _wm
+    sup_rows, dem_seg, agg, num, den = {}, {}, {}, {}, {}
+    for t in da.trades:
+        sup_rows.setdefault(t['sbus'], {})
+        skey = (round(t['s_cost']), round(t['price']))
+        sup_rows[t['sbus']][skey] = sup_rows[t['sbus']].get(skey, 0.0) + t['qty']
+        dem_seg.setdefault(t['center'], {})
+        dem_seg[t['center']][round(t['price'])] = dem_seg[t['center']].get(round(t['price']), 0.0) + t['qty']
+        agg[(t['sbus'], t['center'])] = agg.get((t['sbus'], t['center']), 0.0) + t['qty']
+        for b in (t['sbus'], t['center']):
+            num[b] = num.get(b, 0.0) + t['price'] * t['qty']
+            den[b] = den.get(b, 0.0) + t['qty']
+    cap_by_bus, base_cost_by_bus = {}, {}
+    for s in suppliers:
+        cap_by_bus[s.bus] = cap_by_bus.get(s.bus, 0.0) + s.p_nom
+        base_cost_by_bus.setdefault(s.bus, s.cost)
+    supply_by_bus, cleared_price_line = {}, {}
+    for b, rows in sup_rows.items():
+        blocks = []
+        for ((c, p), mw) in sorted(rows.items(), key=lambda kv: (kv[0][1], kv[0][0])):
+            uid = f'{b}.{len(blocks)}'
+            blocks.append({'unit_id': uid, 'price': float(c), 'volume': mw,
+                           'accepted_volume': mw, 'capacity': mw})
+            cleared_price_line[uid] = float(p)
+        supply_by_bus[b] = blocks
+    for b, cap in cap_by_bus.items():
+        disp = sum(blk['accepted_volume'] for blk in supply_by_bus.get(b, []))
+        idle = cap - disp
+        if idle > 0.5:
+            idle_cost = (sum(blk['price'] * blk['accepted_volume'] for blk in supply_by_bus.get(b, []))
+                         / disp) if disp > 0.5 else base_cost_by_bus[b]
+            blocks = supply_by_bus.setdefault(b, [])
+            blocks.append({'unit_id': f'{b}.idle{len(blocks)}', 'price': float(idle_cost),
+                           'volume': round(idle, 1), 'accepted_volume': 0.0,
+                           'capacity': round(idle, 1)})
+    demand_by_bus = {c: round(v, 1) for c, v in da.cleared.items() if v > 0.5}
+    demand_segments = {c: [{'mw': mw, 'price': float(p)} for p, mw in sorted(seg.items())]
+                       for c, seg in dem_seg.items()}
+    flows = [(s, c, round(mw, 1)) for (s, c), mw in agg.items() if mw > 0.5]
+    bus_lmps = {b: num[b] / den[b] for b in num if den[b] > 0}
+    awards = da.awards
+    net_mw = {}
+    for a in awards:
+        net_mw[a.source] = net_mw.get(a.source, 0.0) + a.mw
+        net_mw[a.sink] = net_mw.get(a.sink, 0.0) - a.mw
+    plot_combined_letter(
+        _wm.build_network(line_ratings=line_ratings or {}), supply_by_bus, demand_by_bus,
+        bus_colors=_wm.BUS_COLORS, bus_coords=_wm.COORDS, flows=flows,
+        bus_lmps=bus_lmps, bus_net_mw=net_mw,
+        gen_marginal_costs=cleared_price_line, lmp_line=False,
+        gen_bid_labels=False, gen_cost_labels=True, block_mw_unit=False,
+        line_flows=atc.flow_dict(pt, awards),
+        constrained_lines=set(atc.overloaded_lines(pt, awards, monitored)),
+        demand_segments=demand_segments, all_buses=_wm.RING_ORDER,
+        sector_order=_wm.RING_ORDER, center_bus=_wm.CENTER_BUS,
+        title_left='Network -- physical (PTDF) flow of the bilateral schedule',
+        title_right='Bilateral dispatch -- gen cost bar + cleared-price staircase, load price bands',
+        suptitle=title)
+    plt.show()

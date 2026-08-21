@@ -1550,3 +1550,56 @@ if __name__ == "__main__":
     lamhat_str = {a: round(v, 2) for a, v in r.area_prices.items()}
     print(f"3-BA capped triangle: sum N_a = {Nsum:,.2f} = R ({R:,.2f}) + R_T ({RT:,.2f}); "
           f"lamhat {lamhat_str}")
+# ---------------------------------------------------------------------------
+# Real-time relief and superposed loading helpers (shared by 204/204a/304).
+# ---------------------------------------------------------------------------
+
+def rt_relief(pt, eng, r_da, nbr_flows, premium, shed_price=150.0,
+              ratings_override=None):
+    """Real-time re-clear of ``eng``: the day-ahead blocks re-offered at cost
+    (decrements buy back at the offer), increments above the schedule at
+    ``cost * (1 + premium)``, and the neighbor's realized flows fixed on the
+    engine's activated lines as ``flow_offsets``. ``ratings_override`` maps
+    {line: MW} to replace a rating for this re-clear (block-relief targets).
+    Returns ``(rt_engine, result)``; the RT engine's units are the re-offered
+    day-ahead blocks and the increments, so figures drawn from the result must
+    use the RT engine.
+    """
+    import copy as _copy
+    gens = {}
+    for g, s in eng.gens.items():
+        da = float(r_da.dispatch.get(g, 0.0))
+        if da > 1e-9:
+            gens[f'{g}__da'] = {'bus': s['bus'], 'cost': s['cost'], 'p_nom': da}
+        rem = float(s['p_nom']) - da
+        if rem > 1e-9:
+            gens[f'{g}__inc'] = {'bus': s['bus'],
+                                 'cost': s['cost'] * (1.0 + premium), 'p_nom': rem}
+    act = list(eng.activated_lines) if eng.activated_lines != 'all' else 'all'
+    eng_rt = MarketEngine(name=eng.name, gens=gens, loads=dict(eng.loads),
+                          activated_lines=act)   # same name: tables/figures line up
+    pt_use = pt
+    if ratings_override:
+        pt_use = _copy.deepcopy(pt)
+        for l, v in ratings_override.items():
+            pt_use.s_nom[pt_use.line_idx[l]] = float(v)
+    mon = act if act != 'all' else list(pt_use.lines)
+    offs = {l: float(nbr_flows.get(l, 0.0)) for l in mon}
+    r_rt = solve_engine_dispatch(pt_use, eng_rt, flow_offsets=offs,
+                                 shed_price=shed_price)
+    return eng_rt, r_rt
+
+
+def actual_flows(pt, results):
+    """Superposed line loading with generators and loads counted ONCE across
+    the books. A schedule booked in both clears (a full-path trade; a tie
+    pair) has no bus of its own, so summing the booked flows would re-count
+    its path; this sums the bus-level injections instead. Returns the flow
+    vector in ``pt.lines`` order."""
+    p = np.zeros(pt.n_bus)
+    for r in results:
+        for b, mw in r.gen_by_bus.items():
+            p[pt.bus_idx[b]] += mw
+        for b, mw in r.load_by_bus.items():
+            p[pt.bus_idx[b]] -= mw
+    return pt.ptdf @ p

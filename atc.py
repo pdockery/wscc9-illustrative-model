@@ -648,3 +648,29 @@ if __name__ == "__main__":
     print(r.awards.to_string(index=False))
     print(f"    flowgate prices mu = {r.mu}")
     print(f"    auction revenue = ${r.rent:,.0f}  (= congestion rent of the awarded set)")
+# ---------------------------------------------------------------------------
+# Contingency (N-1 / LODF) helpers, shared by 301 and 302.
+# ---------------------------------------------------------------------------
+
+def post_contingency_ptdf(net, drop_line, slack_bus="1"):
+    """PTDF of ``net`` with ``drop_line`` removed -- the post-contingency
+    operator (same injections, no redispatch)."""
+    import seams_engine
+    n = net.copy()
+    n.remove("Line", drop_line)
+    return seams_engine.compute_ptdf(n, slack_bus=slack_bus)
+
+
+def post_contingency_flow(pt_ctg, res, line):
+    """The flow ``res``'s injections put on ``line`` under the
+    post-contingency PTDF ``pt_ctg``."""
+    return float((pt_ctg.ptdf @ res.injection)[pt_ctg.line_idx[line]])
+
+
+def lodf_derate(pt_ctg, res, survivor, rating):
+    """The outage distribution factor onto ``survivor`` and the N-1 de-rate:
+    ``lodf`` is the share of the lost circuit's flow the survivor picks up,
+    and ``derate`` is the base limit at which the post-contingency flow lands
+    exactly at ``rating``. Returns ``(lodf, derate)``."""
+    lodf = post_contingency_flow(pt_ctg, res, survivor) / res.flow_own[survivor] - 1.0
+    return lodf, rating / (1.0 + lodf)

@@ -231,3 +231,39 @@ if __name__ == "__main__":
     print("\nseam lines:", mk.ties)
     print("monitored by neither:", [l for l in pt.lines if not mk.monitored_by(l)] or "none")
     print("Market A color for line_2:", mk.line_colors(pt)["line_2"])
+def ba_line_colors(fp, pt, tie_color=UNASSIGNED_COLOR, other_color=UNASSIGNED_COLOR):
+    """Color each internal line by its footprint; ties by ``tie_color`` and
+    unowned lines by ``other_color`` -- the partition-map convention."""
+    out = {}
+    for l in pt.lines:
+        kind, owner = fp.line_kind(pt, l)
+        if kind == "internal" and owner:
+            out[l] = fp.colors[owner]
+        elif l in fp.ties:   # line_kind reports the partition's tie label here
+            out[l] = tie_color
+        else:
+            out[l] = other_color
+    return out
+
+
+def line_status_table(fp, pt, monitored, activated):
+    """Per-line status table: location (internal footprint or tie), and for
+    each footprint whether it enforces the line (in its activated set),
+    monitors it, or neither."""
+    import pandas as pd
+
+    def status(l, m):
+        if l in activated[m]:
+            return "enforces"
+        if l in monitored[m]:
+            return "monitors"
+        return "--"
+
+    label = getattr(fp, "tie_label", "tie")
+    rows = []
+    for l in pt.lines:
+        b0, b1 = pt.line_buses[pt.line_idx[l]]
+        loc = label if l in fp.ties else f"internal {fp.fp_of(b0)}"
+        rows.append({"line": l, "ends": f"{b0}-{b1}", "location": loc,
+                     **{m: status(l, m) for m in fp.names}})
+    return pd.DataFrame(rows).set_index("line")

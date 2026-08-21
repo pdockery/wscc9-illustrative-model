@@ -2264,3 +2264,149 @@ if __name__ == "__main__":
     assert abs(jt - target) < 1.0, "scheduling ledger does not conserve"
     print("OK -- both recover in autarky; joint dispatch strands "
           f"{rec.index[~rec['recovers joint']].tolist()}")
+def flow_ledger(fp, base, ss, cur, gbus, host, ss_spec, gen_groups, cra, loads,
+                cols=('Economic', 'Self-schedule')):
+    """Money flows for two dispatches (economic vs forced self-schedule).
+    Payments are positive magnitudes; the net block shows consumers' net OUTLAY
+    (payment - congestion rebate; lower is better) and each generator group's
+    net INFLOW (profit + any congestion right; higher is better). The
+    congestion revenue R = (all load pays) - (all gen paid) is split by the
+    host rule: the self-schedule keeps its own S x price-separation (cra), the
+    residual goes to the host footprint's consumers. Conserves: consumers' net
+    outlay - generators' net inflow = production cost.
+
+      fp         the footprint partition (names and per-footprint buses)
+      cur        quadratic cost curves {gen: (c0, c1)}
+      gbus       gen -> bus map (covers every gen in cur)
+      host       footprint whose consumers receive the residual congestion revenue
+      ss_spec    dict(bus, cost, S, group): the self-scheduled block -- S MW
+                 injected at `bus`, flat `cost`, added to the generator group
+                 labeled `group` in the self-schedule column only
+      gen_groups list of (label, [gen names]) in display order
+      cra        (econ, ss): the congestion right paid to the self-scheduler /
+                 award in each column
+      loads      {bus: MW} the served loads
+    """
+    def case(res, sched, cra_self):
+        lam = res.lmp
+        Lpay = {ba: sum(lam[b] * loads.get(b, 0.0) for b in fp.defs[ba]) for ba in fp.names}
+        gp = {lab: sum(lam[gbus[g]] * res.dispatch.get(g, 0.0) for g in gens)
+              for lab, gens in gen_groups}
+        gc = {lab: sum(cur[g][0] * res.dispatch.get(g, 0.0)
+                       + 0.5 * cur[g][1] * res.dispatch.get(g, 0.0) ** 2
+                       for g in gens) for lab, gens in gen_groups}
+        if sched:
+            gp[ss_spec['group']] += lam[ss_spec['bus']] * ss_spec['S']
+            gc[ss_spec['group']] += ss_spec['cost'] * ss_spec['S']
+        R = sum(Lpay.values()) - sum(gp.values())
+        return Lpay, gp, gc, R, cra_self, R - cra_self
+
+    e = case(base, False, cra[0])
+    s = case(ss, True, cra[1])
+    others = [b for b in fp.names if b != host]
+    idx, dat = [], []
+
+    def row(sec, item, ve, vs):
+        idx.append((sec, item))
+        dat.append([round(ve, 1), round(vs, 1), round(vs - ve, 1)])
+
+    row('Payments', f'Consumer payment -- {host} (host)', e[0][host], s[0][host])
+    for ba in others:
+        row('Payments', f'Consumer payment -- {ba}', e[0][ba], s[0][ba])
+    row('Payments', 'Consumer payment -- TOTAL', sum(e[0].values()), sum(s[0].values()))
+    for lab, _ in gen_groups:
+        row('Payments', f'Gen payment -- {lab}', e[1][lab], s[1][lab])
+    row('Payments', 'Gen payment -- TOTAL', sum(e[1].values()), sum(s[1].values()))
+    row('Payments', 'Production cost (fuel)', sum(e[2].values()), sum(s[2].values()))
+    row('Payments', 'Generator profit (pay - cost)',
+        sum(e[1].values()) - sum(e[2].values()), sum(s[1].values()) - sum(s[2].values()))
+    ssg = ss_spec['group']
+    row('Self-scheduler', 'Revenue from generating', e[1][ssg], s[1][ssg])
+    row('Self-scheduler', 'Production cost', e[2][ssg], s[2][ssg])
+    row('Self-scheduler', 'Position before congestion revenue',
+        e[1][ssg] - e[2][ssg], s[1][ssg] - s[2][ssg])
+    row('Congestion revenue', 'R = consumer pay - gen pay', e[3], s[3])
+    row('Congestion revenue', 'CRA -> self-scheduler (S x dLambda)', e[4], s[4])
+    row('Congestion revenue', f'CRA -> host {host} consumers (residual)', e[5], s[5])
+    row('Net position', f'Consumers {host} (host) -- outlay', e[0][host] - e[5], s[0][host] - s[5])
+    for ba in others:
+        row('Net position', f'Consumers {ba} -- outlay', e[0][ba], s[0][ba])
+    for lab, _ in gen_groups:
+        add_e = e[4] if lab == ss_spec['group'] else 0.0
+        add_s = s[4] if lab == ss_spec['group'] else 0.0
+        row('Net position', f'Generators {lab} -- inflow',
+            e[1][lab] - e[2][lab] + add_e, s[1][lab] - s[2][lab] + add_s)
+    row('Net position', 'System (= production cost)', sum(e[2].values()), sum(s[2].values()))
+    led = pd.DataFrame(dat, index=pd.MultiIndex.from_tuples(idx),
+                       columns=[cols[0], cols[1], 'Change'])
+
+    def effect(item, ch):
+        if 'outlay' in item:
+            return 'better' if ch < -0.5 else 'worse' if ch > 0.5 else '--'
+        if 'inflow' in item:
+            return 'better' if ch > 0.5 else 'worse' if ch < -0.5 else '--'
+        if 'System' in item:
+            return 'worse' if ch > 0.5 else 'better' if ch < -0.5 else '--'
+        return ''
+
+    led['effect'] = [effect(it, ch) for (_, it), ch in zip(led.index, led['Change'])]
+    return led
+
+
+def seam_positions(pair_a, pair_b, chgA=0.0, payB=0.0, unified_cost=None):
+    """Two-engine settlement positions (consumer payments negative). ``chgA``
+    is what the first market charges the trader (its delivery-bus LMPs times
+    the scheduled MW); ``payB`` what the second market pays the trader
+    (receipt-bus LMPs). Each market's congestion revenue is its settlement
+    RESIDUAL -- consumers (+ its trader leg) minus generator revenue -- so
+    every row closes exactly: consumers = gen revenue + congestion + trader.
+    ``pair_a`` / ``pair_b`` are (engine, result); labels come from the
+    engines' names."""
+    out = {}
+    for (eng, r), trade_cash in ((pair_a, +chgA), (pair_b, -payB)):
+        cons = sum(r.lmp[b] * mw for b, mw in eng.loads.items())
+        grev = sum(r.lmp[str(eng.gens[g]['bus'])] * mw for g, mw in r.dispatch.items())
+        gcst = sum(eng.gens[g]['cost'] * mw for g, mw in r.dispatch.items())
+        m = eng.name
+        out[(m, 'consumers')] = -cons
+        out[(m, 'gen revenue')] = grev
+        out[(m, 'gen profit')] = grev - gcst
+        out[(m, 'congestion revenue')] = cons + trade_cash - grev
+    out[('Trader', 'profit')] = payB - chgA
+    cost = pair_a[1].total_cost + pair_b[1].total_cost
+    out[('Total', 'production cost')] = -cost
+    if unified_cost is not None:
+        out[('Total', 'W vs unified')] = cost - unified_cost
+    return out
+
+
+def seam_positions_unified(pt, fp, engines, uni_engine, res):
+    """The unified clearing read in the same positions format. One pool, one
+    rent: each binding line's rent is attributed to the footprint that
+    contains it (a binding seam line splits evenly). Under a unified clear any
+    per-market split is an allocation CHOICE."""
+    rent = {m: 0.0 for m in fp.names}
+    for l, mu in res.line_dual.items():
+        if abs(mu) < 1e-9:
+            continue
+        kind = fp.line_kind(pt, l)
+        share = abs(mu) * pt.s_nom[pt.line_idx[l]]
+        if kind[0] == 'internal':
+            rent[kind[1]] += share
+        else:
+            for m in fp.names:
+                rent[m] += share / len(fp.names)
+    out = {}
+    for eng in engines:
+        m = eng.name
+        own = [g for g in res.dispatch if str(uni_engine.gens[g]['bus']) in eng.buses]
+        grev = sum(res.lmp[str(uni_engine.gens[g]['bus'])] * res.dispatch[g] for g in own)
+        gcst = sum(uni_engine.gens[g]['cost'] * res.dispatch[g] for g in own)
+        out[(m, 'consumers')] = -sum(res.lmp[b] * mw for b, mw in eng.loads.items())
+        out[(m, 'gen revenue')] = grev
+        out[(m, 'gen profit')] = grev - gcst
+        out[(m, 'congestion revenue')] = rent[m]
+    out[('Trader', 'profit')] = 0.0
+    out[('Total', 'production cost')] = -res.total_cost
+    out[('Total', 'W vs unified')] = 0.0
+    return out
