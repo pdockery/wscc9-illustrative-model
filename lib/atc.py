@@ -1754,11 +1754,11 @@ def _reduce_pro_rata(A: FloatArray, t: FloatArray, cap_fwd: FloatArray,
     Under the holder-netted reading a contributor must also belong to a holder
     whose own book nets onto the constraint in the overloaded direction,
     because a holder whose book nets against that direction adds nothing to
-    the overload under that reading. That screen is a Lab modeling choice
+    the overload under that reading. That screen is a modeling choice
     made with the reading itself. The step is not monotone under this reading
     either, so the same iteration bound and the same failure apply.
 
-    The rule is a Lab modeling choice. It reads the pro rata curtailment
+    The rule is a modeling choice. It reads the pro rata curtailment
     practice of transmission loading relief under the open access transmission
     tariff, where the parties that materially load a constrained element are
     cut in proportion to their contributions and the non-firm service is cut
@@ -1931,7 +1931,7 @@ def _reduce_least_squares(A: FloatArray, t: FloatArray, cap_fwd: FloatArray,
     source, the ISO tariff's congestion revenue rights allocation section and
     the congestion revenue rights Business Practice Manual, is not filed in
     ``sources/``, so the rule stated here is a reading of that description and
-    not a verified transcription of the tariff. It is a Lab modeling choice
+    not a verified transcription of the tariff. It is a modeling choice
     until the primary source is filed.
 
     Only the netted reading has this form. The firm reading sums each

@@ -31,7 +31,7 @@ Three methods connect the tag to a clearing on the shared network.
    point-of-delivery arcs over the network, through
    :func:`wscc9_figures.rights_figure`, with the segment table beside it.
 
-**Lab modeling choices.** The tag is simplified to what a single-period,
+**Modeling choices.** The tag is simplified to what a single-period,
 energy-only, bid-based DC clearing can read, and each simplification is stated
 here rather than in a notebook cell.
 

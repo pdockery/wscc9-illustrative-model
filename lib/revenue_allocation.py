@@ -3066,7 +3066,7 @@ def methodology_ledger_4p(
 # Bilateral self-solve with a redispatch premium (the autarky baseline)
 # ──────────────────────────────────────────────────────────────────────────
 #: Price of the residual backstop unit, $/MWh (the construct of
-#: ``wscc9_model.fleet_with_backstop``; a Lab modeling choice with no source).
+#: ``wscc9_model.fleet_with_backstop``; a modeling choice with no source).
 BACKSTOP_PRICE = 90.0
 
 
@@ -3080,7 +3080,7 @@ def _fleet_with_case_backstop(loads: Loads, price: float = BACKSTOP_PRICE) -> Fl
 
     The backstop is a last resort only when every unit of the case costs less than
     ``price``, so a case with a unit at or above ``price`` raises ``ValueError`` (on
-    the WECC case, 265 units cost more than $90/MWh). This is a Lab modeling choice.
+    the WECC case, 265 units cost more than $90/MWh). This is a modeling choice.
     """
     base = _case().gen_fleet
     dearest = max((float(s["cost"]) for s in base.values()), default=0.0)

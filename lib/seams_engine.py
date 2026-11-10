@@ -1331,7 +1331,7 @@ def solve_engine_transfers(
     dual ``μ_T^{ab}``, and ``schedule_limits`` is the limit at a scheduling
     point where awards leave the footprint.
 
-    Three departures from the source, each a Lab modeling choice:
+    Three departures from the source, each a modeling choice:
 
     1. The ISL is a gross, one-sided cap on cleared demand bids. The
        source's row nets imports (+1) against exports (−1) at the point and
