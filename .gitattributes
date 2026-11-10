@@ -1,0 +1,10 @@
+# LF in the repository so hashes and frontmatter match on Colab, Linux and macOS.
+# Notebooks stay under the contributor's autocrlf setting.
+*.md text eol=lf
+.claude/** text eol=lf
+lib/** text eol=lf
+tests/** text eol=lf
+tools/** text eol=lf
+.githooks/* text eol=lf
+*.png binary
+*.pdf binary

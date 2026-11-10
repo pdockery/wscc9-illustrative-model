@@ -1,0 +1,345 @@
+% references.bib of pdockery/wscc9-illustrative-model, the public seams-workshop sandbox.
+%
+% Policy. Public documents of ISOs, RTOs, FERC, SPP, NERC, NAESB and stakeholder
+% filings are tracked under sources/, and the entry's file field names the tracked
+% copy. Academic papers, books and journal articles are link-only: the PDF is never
+% committed, the entry carries url, and no file field. Two further kinds are link-only
+% whatever their publisher: the SPP Markets+ Protocols, whose first page reads
+% "Copyright 2025 by Southwest Power Pool, Inc. All rights reserved.", and the two
+% September 16, 2026 workshop files, the transactions deck and the agenda deck,
+% which SPP posts as members of one slide-deck zip. The local copies carry "ISO
+% Internal" and "SPP Internal Only" markings, stay untracked, and each entry
+% carries the url of the zip. A tracked workshop deck is the excerpt of the
+% posted deck that the notebooks cite, named in the entry's note.
+%
+% Naming. A tracked file is <bib key>.<ext> under the folder of its category, with no
+% spaces, parentheses or capitals. The workshop excerpts are the exception and
+% keep date-named files under sources/workshops/, listed with their source url and
+% SHA-256 in sources/workshops/manifest.json. sources/manifest.json lists every
+% tracked and link-only item. sources/excerpts/<key>.md holds the passages the
+% notebooks cite, each read from the source at the stated page.
+
+
+% ========================================================================
+% ACADEMIC LITERATURE (link-only)
+% ========================================================================
+
+% Link-only (academic paper). The url is the paper as posted on Hogan's LMP market design site; Hogan's Harvard site returned HTTP 403 to an automated request on 2026-11-07.
+@techreport{cadwalader1999coordinating,
+  author       = {Cadwalader, Michael D. and Harvey, Scott M. and Hogan, William W. and Pope, Susan L.},
+  title        = {Coordinating Congestion Relief Across Multiple Regions},
+  institution  = {Center for Business and Government, John F. Kennedy School of Government, Harvard University},
+  year         = {1999},
+  month        = oct,
+  url          = {http://www.lmpmarketdesign.com/papers/Coord_Congestion_Mult_Regions_10_07_99.pdf},
+  note         = {A ``full coordination'' joint dispatch versus decomposed regional sub-problems that exchange shift-factor information, with the nodal price at each bus decomposing into an energy term plus the shift-factor-weighted sum of every region's binding-constraint shadow prices.},
+}
+
+@misc{thurner2018pandapower,
+  author       = {Thurner, Leon and Scheidler, Alexander and Sch{\"a}fer, Florian and Menke, Jan-Hendrik and Dollichon, Julian and Meier, Friederike and Meinecke, Steffen and Braun, Martin},
+  title        = {pandapower: An Open-Source {Python} Tool for Convenient Modeling, Analysis, and Optimization of Electric Power Systems},
+  howpublished = {IEEE Transactions on Power Systems, 33(6), 6510--6521},
+  year         = {2018},
+  month        = nov,
+  url          = {https://doi.org/10.1109/TPWRS.2018.2829021},
+  note         = {The open-access paper for the pandapower package, whose case9 network the workshop decks use as the WSCC 9-bus test case. DOI 10.1109/TPWRS.2018.2829021; preprint arXiv:1709.06743. Link-only.},
+}
+
+@misc{anderson1977power,
+  author       = {Anderson, P. M. and Fouad, A. A.},
+  title        = {Power System Control and Stability},
+  howpublished = {Iowa State University Press, Ames, Iowa},
+  year         = {1977},
+  url          = {https://openlibrary.org/works/OL1920495W},
+  note         = {The textbook source of the WSCC 3-machine, 9-bus system that the title slides of the workshop decks name. Link-only.},
+}
+
+
+% Link-only (academic lecture). Added 2026-11-10 for the Western context of AGENTS.md; cited in the lecture's printed pagination, pp. 408 to 444.
+@techreport{ostrom2009nobellecture,
+  author       = {Ostrom, Elinor},
+  title        = {Beyond Markets and States: Polycentric Governance of Complex Economic Systems},
+  type         = {Nobel Prize lecture},
+  institution  = {The Nobel Foundation},
+  address      = {Stockholm, Sweden},
+  year         = {2009},
+  month        = dec,
+  url          = {https://www.nobelprize.org/uploads/2018/06/ostrom_lecture.pdf},
+  note         = {Ostrom's Nobel lecture defines polycentric governance as many formally independent centers of decision making (p.~411), classifies goods by the difficulty of excluding beneficiaries and the subtractability of use (p.~413), and lists the design principles of long-enduring common-pool institutions, among them the congruence of appropriation rules with provision rules (principle 2B, p.~422). Link-only.},
+}
+
+% Link-only (book). Added 2026-11-10 for the Western context of AGENTS.md.
+@book{ostrom1990governing,
+  author       = {Ostrom, Elinor},
+  title        = {Governing the Commons: The Evolution of Institutions for Collective Action},
+  publisher    = {Cambridge University Press},
+  address      = {Cambridge, U.K.},
+  year         = {1990},
+  url          = {https://doi.org/10.1017/CBO9781316423936},
+  note         = {The book that distinguishes appropriation, the withdrawal of units from a common-pool resource, from provision, its supply and maintenance over time (ch.~2), and derives design principles for institutions that govern such a resource durably. Link-only.},
+}
+
+% Link-only (journal article). Added 2026-11-10 for the Western context of AGENTS.md.
+@article{kiesling2026rto,
+  author       = {Kiesling, Lynne},
+  title        = {The Promise and Perils of Exclusion: Using Institutional Design Principles and the Theory of Clubs to Analyse Regional Transmission Organization Governance},
+  journal      = {Journal of Institutional Economics},
+  volume       = {22},
+  pages        = {1--23},
+  year         = {2026},
+  url          = {https://doi.org/10.1017/S1744137426100423},
+  note         = {Kiesling treats reliability on an AC network as a common-pool resource: the grid is non-excludable, because connected users cannot easily be denied access, and rivalrous, because finite capacity makes it congestible (p.~4); the growing heterogeneity of participants and business models strains the governance of regional transmission organizations (p.~1). Link-only.},
+}
+
+% ========================================================================
+% FERC FILINGS & ISO POLICY DOCUMENTS
+% ========================================================================
+
+@misc{caiso_spp_workshop_aug2026,
+  author       = {Dockery, Paul},
+  title        = {Seams Workshop: Congestion Management Examples},
+  howpublished = {Joint Market Seams Workshop No. 2, Western Electricity Coordinating Council, Salt Lake City, Utah, August 18, 2026; presented by Paul Dockery (CAISO)},
+  year         = {2026},
+  month        = aug,
+  file         = {sources/workshops/2026-08-18_congestion_management_examples.pdf},
+  url          = {https://www.westernenergymarkets.com/documents/presentation-market-seams-workshop-aug-18-2026.pdf},
+  note         = {Worked 9-bus examples of two markets clearing independently on one network, including the over-forecast of a neighbor's flow contribution that produces phantom congestion. The tracked file holds pages 91 to 109 of the 113-page posted presentation (footer ISO Public). The recording is at https://youtu.be/ZyahkfpsJLg.},
+}
+
+@misc{caiso_spp_workshop_sep2026,
+  author       = {Dockery, Paul},
+  title        = {Seams Workshop: Transactions Across Market Boundaries},
+  howpublished = {Joint Market Seams Workshop No. 3, Lakewood, Colorado, September 16, 2026; presented by Paul Dockery (CAISO)},
+  year         = {2026},
+  month        = sep,
+  url          = {https://spp.org/documents/77788/joint%20market%20seams%20workshop%20slide%20decks%2020270916.zip},
+  note         = {Worked 9-bus examples of transactions across a market boundary: balanced price-taking schedules, price-sensitive schedules, and mismatched awards. Link-only: the deck is a member of the SPP slide-deck zip at the url, which posts it as a 35-slide PPTX marked ISO Internal. The local copy is a 34-page PDF export marked ISO Internal, and it stays untracked.},
+}
+
+@misc{caiso_spp_workshop_sep2026_agenda,
+  author       = {{California Independent System Operator and Southwest Power Pool}},
+  title        = {Joint Seams Workshop: Agenda Deck, Workshop No. 3},
+  howpublished = {Joint Market Seams Workshop No. 3, Lakewood, Colorado, September 16, 2026},
+  year         = {2026},
+  month        = sep,
+  url          = {https://spp.org/documents/77788/joint%20market%20seams%20workshop%20slide%20decks%2020270916.zip},
+  note         = {The joint workshop's agenda deck, whose Clarifying Terms slide defines market seams issues as arising when separate markets optimize interdependent portions of a shared transmission network. Link-only: the deck is a member of the SPP slide-deck zip at the url, and the posted six-slide PPTX carries an SPP Internal Only marking and speaker notes. The local copy is that file and stays untracked.},
+}
+
+@misc{caiso_spp_workshop_oct2026,
+  author       = {Dockery, Paul},
+  title        = {Seams Workshop: Western Loading Relief Process Examples},
+  howpublished = {Joint Market Seams Workshop No. 4, Salt Lake City, Utah, October 22, 2026; presented by Paul Dockery (CAISO)},
+  year         = {2026},
+  month        = oct,
+  file         = {sources/workshops/2026-10-22_loading_relief_examples.pdf},
+  url          = {https://www.westernenergymarkets.com/documents/presentation-joint-market-seams-workshop-oct-22-2026.pdf},
+  note         = {The fourth joint seams workshop's combined presentation (95 pages). The Clarifying Terms slide is page 11, which the tracked file does not hold, so it is cited by url and page. The tracked file holds pages 52 to 86, the Western Loading Relief examples (footer ISO Public).},
+}
+
+@techreport{caiso_edam_techdesc,
+  author       = {{California Independent System Operator}},
+  title        = {Extended Day-Ahead Market Draft Technical Description},
+  institution  = {California Independent System Operator (CAISO)},
+  year         = {2024},
+  month        = sep,
+  type         = {Technical Description, Version 1.3},
+  file         = {sources/ferc-filings-and-iso-policy/caiso_edam_techdesc.pdf},
+  url          = {https://stakeholdercenter.caiso.com/StakeholderInitiatives/Extended-day-ahead-market},
+  note         = {EDAM schedules a bounded transfer between balancing areas and prices it inside the optimization, carrying intertie scheduling limits in the same generalized constraint set as physical flow limits. Marginal prices are derived from the shadow prices of the binding constraints, including the imbalance-reserve deployment-scenario terms.},
+}
+
+@techreport{caiso_dame_edam2023,
+  author       = {{California Independent System Operator}},
+  title        = {Day-Ahead Market Enhancements and Extended Day-Ahead Market Tariff Amendment},
+  institution  = {California Independent System Operator},
+  year         = {2023},
+  month        = aug,
+  type         = {FPA Section 205 transmittal letter, FERC Docket No. ER23-2686},
+  file         = {sources/ferc-filings-and-iso-policy/caiso_dame_edam2023.pdf},
+  url          = {https://elibrary.ferc.gov/eLibrary/filelist?accession_number=20230822-5161},
+  note         = {The transmittal letter of the EDAM filing (Docket ER23-2686): congestion revenue on a binding internal constraint goes to the balancing authority area where the constraint is modeled, because that area is responsible for resolving it, and the transfer revenue on a binding transfer scheduling limit is shared equally by the two EDAM entities that made the transmission available, except that a transmission customer who released its rights takes the allocation attributable to that right (Section V.D.3, pp.~186--189).},
+}
+
+@techreport{caiso_dame_edam_tariff2023,
+  author       = {{California Independent System Operator}},
+  title        = {Day-Ahead Market Enhancements and Extended Day-Ahead Market Tariff Amendment: Tariff Revisions},
+  institution  = {California Independent System Operator},
+  year         = {2023},
+  month        = aug,
+  type         = {Proposed tariff sheets filed with the FPA Section 205 transmittal letter, FERC Docket No. ER23-2686},
+  file         = {sources/ferc-filings-and-iso-policy/caiso_dame_edam_tariff2023.pdf},
+  url          = {https://elibrary.ferc.gov/eLibrary/filelist?accession_number=20230822-5161},
+  note         = {The tariff sheets of the EDAM filing, read beside the transmittal letter in \texttt{caiso\_dame\_edam2023}. Section 33.11.1 states that congestion revenue is collected when a transmission constraint or intertie scheduling limit binds; Section 33.11.1.1.1 allocates energy transfer revenue equally between the two balancing authority areas absent a notified pre-existing commercial arrangement; and Section 33.11.1.2 distributes the congestion charge revenue to the balancing authority area within which the congestion occurred.},
+}
+
+@techreport{caiso_bpm_eim_v37,
+  author       = {{California Independent System Operator}},
+  title        = {Business Practice Manual for the {Energy Imbalance Market}},
+  institution  = {California Independent System Operator (CAISO)},
+  year         = {2026},
+  type         = {Business Practice Manual, Version 37},
+  file         = {sources/ferc-filings-and-iso-policy/caiso_bpm_eim_v37.pdf},
+  url          = {https://bpmcm.caiso.com/},
+  note         = {The tracked file is a local Word export of Version 37 whose hash is not tied to a posted copy, and the url is the BPM library landing page. The operative real-time manual for the WEIM. Section 11.3.3.4.1 allocates each constraint's congestion revenue through the marginal congestion component: a WEIM transfer scheduling limit's revenue goes entirely to the area for which the constraint is formulated, the transfer distribution constraint's revenue splits by component, with the transmission cost 50/50 between the two areas and the intertie scheduling limit's share entirely to the area that manages the limit (pp.~118--120).},
+}
+
+@techreport{caiso_intertie_modeling2026,
+  author       = {Angelidis, George and {California Independent System Operator}},
+  title        = {Intertie Schedule Modeling Evolution on {CAISO} Balancing Area Interties --- Stakeholder Workshop},
+  institution  = {California Independent System Operator (CAISO)},
+  year         = {2026},
+  month        = mar,
+  type         = {Stakeholder Workshop Presentation},
+  file         = {sources/ferc-filings-and-iso-policy/caiso_intertie_modeling2026.pdf},
+  url          = {https://www.caiso.com/meetings-events/calendar},
+  note         = {SP-Tie models an intertie schedule as an injection or ejection at the scheduling point, so congestion is priced on that point's shift factor and the price carries the intertie scheduling limit's shadow price; GAP-Tie sources the schedule from the neighbouring area's Default GAP, so congestion is priced on the aggregate generation's shift factor, which the presentation calls comparatively more accurate because it models the source of the transaction.},
+}
+
+@techreport{caiso_spp_jointreport2026,
+  author       = {{California Independent System Operator Corporation and Southwest Power Pool, Inc.}},
+  title        = {Joint Report of California Independent System Operator Corporation and Southwest Power Pool, Inc. (Western Seams Coordination)},
+  institution  = {California Independent System Operator Corporation and Southwest Power Pool, Inc.},
+  year         = {2026},
+  month        = sep,
+  type         = {Joint report to the Federal Energy Regulatory Commission, Docket No.~AD26-10-000, dated 30 September 2026},
+  file         = {sources/ferc-filings-and-iso-policy/caiso_spp_jointreport2026.pdf},
+  url          = {https://spp.org/documents/77956/sep-30-2026-joint-report-of-the-california-independent-system-operator-corporation-and-southwest-power-pool-inc-ad26-10.pdf},
+  note         = {CAISO and SPP's joint report to FERC on Western seams: WLR is being built into the ECC for completion by the end of 2027, market operators could meet a market area's WLR relief as a constraint on market flows if the BAs and TOPs agree, and no mechanism yet coordinates least-cost redispatch across markets.},
+}
+
+@techreport{eccetf_futurestate2024,
+  author       = {{ECC Expansion Task Force}},
+  title        = {{ECC} Future State (Task Force White Paper)},
+  institution  = {ECC Expansion Task Force, reporting to the Enhanced Curtailment Calculator Working Group},
+  year         = {2024},
+  month        = apr,
+  type         = {White paper, approved by the ECCWG 30 April 2024; filed as the attachment to NAESB Standards Request R24005},
+  file         = {sources/ferc-filings-and-iso-policy/eccetf_futurestate2024.pdf},
+  url          = {https://naesb.org/pdf4/R24005_attachment.pdf},
+  note         = {The Western RCs' task-force proposal behind WLR: use the ECC's DC power flow and impact layers on any defined SOL constraint, lower the material-impact threshold from 10\% to 5\%, treat a BA's untagged generation-to-load as firm and aggregate it per market area, and apportion relief by priority bucket and pro rata by impact.},
+}
+
+% NAESB document, publicly posted on naesb.org, tracked.
+@techreport{naesb_weq_ecrec2025,
+  author       = {{NAESB WEQ Executive Committee}},
+  title        = {Recommendation to {NAESB} Executive Committee, as Revised by the {WEQ} Executive Committee on October 22, 2025 (2025 {WEQ} Annual Plan Item 1.b / {R24005})},
+  institution  = {North American Energy Standards Board, Wholesale Electric Quadrant},
+  year         = {2025},
+  month        = oct,
+  type         = {Revised recommendation of 22 October 2025; standards attachment available to NAESB members only},
+  file         = {sources/ferc-filings-and-iso-policy/naesb_weq_ecrec2025.docx},
+  url          = {https://naesb.org/pdf4/weq_ec102225a2.docx},
+  note         = {The NAESB WEQ Executive Committee's 22 October 2025 version of the WLR recommendation, which went to membership ratification on 2 December 2025; its public summary defines material impact as 5\% or greater and assigns priority by the constrained path or weakest link method. The document is publicly posted on naesb.org.},
+}
+
+% Fetched from the url on 2026-11-07; a PJM and MISO filing, so it sits with the filings.
+@techreport{pjm_miso_cm2003,
+  author       = {{PJM Interconnection and Midwest ISO}},
+  title        = {Managing Congestion To Address Seams: A Proposal for Congestion Management Coordination},
+  institution  = {PJM Interconnection, L.L.C. and the Midwest Independent Transmission System Operator, Inc.},
+  year         = {2003},
+  month        = may,
+  file         = {sources/ferc-filings-and-iso-policy/pjm_miso_cm2003.pdf},
+  url          = {https://www.monitoringanalytics.com/filings/2003/20030728-pjm-miso-cm-33a.pdf},
+  note         = {The PJM and MISO proposal. It defines the Market Flow calculation (the flow one operator's own dispatch places on a jointly monitored flowgate), the network-and-native-load (NNL) baseline, flowgate determination, and the import/export tagging that lets two market operators observe limits on coordinated flowgates.},
+}
+
+
+% ========================================================================
+% INSTITUTIONAL CONTEXT
+% ========================================================================
+
+@misc{caiso_mlk_review2024,
+  author       = {Bautista Alderete, Guillermo},
+  title        = {Review of {January} 2024 {MLK} Event and Myth Busting},
+  howpublished = {CAISO presentation to the Western Energy Markets Regional Issues Forum},
+  year         = {2024},
+  month        = sep,
+  file         = {sources/institutional-context/caiso_mlk_review2024.pdf},
+  url          = {https://www.westerneim.com/Pages/Governance/RegionalIssuesForum.aspx},
+  note         = {The ISO's own review of the January 2024 MLK cold-snap congestion at Malin: BPA and the ISO co-operate COI under a most-limiting-constraint agreement, the day-ahead congestion price at Malin was set by export bids against the ISO's roughly 1,500 MW share of export capability, the Jan 11--19 congestion rents of roughly \$100M were charged to exports and returned through CRRs (\$53M), TOR self-schedules (\$25M), and the balance to measured demand, and a common day-ahead market would have redispatched resources north of Malin with the area where the constraint occurs collecting the congestion revenue.},
+}
+
+@misc{caiso_mppf_mar2024,
+  author       = {{California Independent System Operator}},
+  title        = {Market Performance and Planning Forum, {Q1} 2024},
+  howpublished = {CAISO presentation, Market Performance and Planning Forum, March 11, 2024, 180 slides},
+  year         = {2024},
+  month        = mar,
+  file         = {sources/institutional-context/caiso_mppf_mar2024.pdf},
+  url          = {https://www.caiso.com/documents/presentation-market-performance-planning-forum-mar-11-2024.pdf},
+  note         = {The ISO's winter market performance report to stakeholders five weeks after the event: about 31 percent of real-time exports flowed through Malin, which was fully used with no exports on NOB; Malin congestion rents were about \$101 million, distributed to CRR holders with any surplus to demand including exports; \$25 million of Malin congestion was hedged by transmission ownership rights, which ``are not congestion rents''; and under EDAM the MALIN\_ISL scheduling constraint and NWACI would be enforced separately, each constraint's rent going to its own balancing area, with a transfer-constraint rent split 50/50 (slides 8, 11, 13, 15--17).},
+}
+
+@techreport{caiso_winter_report_jan2024,
+  author       = {{California Independent System Operator, Market Performance and Advanced Analytics}},
+  title        = {Winter Conditions Report for {January} 2024},
+  institution  = {California Independent System Operator},
+  year         = {2024},
+  month        = mar,
+  type         = {Market performance report, dated 6 March 2024, 80 pages},
+  file         = {sources/institutional-context/caiso_winter_report_jan2024.pdf},
+  url          = {https://www.caiso.com/documents/wintermarketperformancereportforjan2024.pdf},
+  note         = {The ISO's own market-performance report on the January 2024 cold event: it attributes the Malin export congestion to forced outages north of Malin (an ice-storm outage cycled the limit between January 14 and 17) and to export requests above the scheduling limit, reports about \$100.9 million of day-ahead congestion rent on the Malin intertie for January 5 to 19 beside about \$25 million of capacity value for transmission ownership and existing rights that accrue no rent, and publishes no NWACI or COI element rating and no CRR disposition in dollars.},
+}
+
+@techreport{caiso_dmm_q1_2024,
+  author       = {{California ISO Department of Market Monitoring}},
+  title        = {Q1 2024 Report on Market Issues and Performance},
+  institution  = {California Independent System Operator},
+  year         = {2024},
+  month        = oct,
+  type         = {Quarterly report, October 11, 2024},
+  file         = {sources/institutional-context/caiso_dmm_q1_2024.pdf},
+  url          = {https://www.caiso.com/documents/2024-first-quarter-report-on-market-issues-and-performance-oct-11-2024.pdf},
+  note         = {The market monitor's measurement of the January 2024 cold weather event: day-ahead intertie congestion rent of \$133 million in the quarter against \$14 million a year earlier, of which \$125.6 million was Malin export rent, mostly January 11 to 24; the 6110\_COI\_S-N nomogram, managed with BPA's NWACI\_SN, with an average binding limit of 2,300 MW in January; and a \$53 million CRR auction loss to transmission ratepayers.},
+}
+
+% Link-only: the first page of the Protocols reads "Copyright © 2025 by Southwest Power Pool, Inc. All rights reserved." The PDF stays local and untracked.
+@techreport{spp_marketsplus_protocols2026,
+  author       = {{Southwest Power Pool}},
+  title        = {Market Protocols for {SPP} {Markets+}, Version 1.0a},
+  institution  = {Southwest Power Pool, Market Policy Coordination},
+  year         = {2026},
+  month        = apr,
+  type         = {Market protocols},
+  url          = {https://www.spp.org/western-services/marketsplus/},
+  note         = {The operative Markets+ rulebook (462 pp., published 2 April 2026). Section 6 pays Congestion Rent Eligible Transmission Service Reservation holders a share of the rent on each binding constraint, with the excess returned to the Markets+ transmission service provider; the allocation factor is the reservation's source-minus-sink shift factor on the constraint. A binding Coordinated Interchange Scheduling Limit between two participating balancing authority areas splits its rent fifty-fifty between the export and import sides absent a mutually agreed ratio (Section 6.3). A schedule with a balancing authority outside Markets+ is an Import or Export Interchange Transaction, self-scheduled or economic to \$2,000 per MWh, settled at an External Interface Settlement Location on the Markets+ side.},
+}
+
+% NAESB document, publicly posted on naesb.org, tracked.
+@misc{naesb_wicmwg_minutes2025,
+  author       = {{North American Energy Standards Board}},
+  title        = {Minutes of the {WEQ} {BPS} Western Interconnection Congestion Management Working Group (2025) and of the {WEQ} Business Practices Subcommittee (17 October 2025)},
+  howpublished = {Meeting minutes, final and draft, NAESB Wholesale Electric Quadrant},
+  year         = {2025},
+  file         = {sources/institutional-context/naesb_wicmwg_minutes2025/},
+  url          = {https://naesb.org/pdf4/weq_bps_WICM022025fm.docx},
+  note         = {Minutes of the NAESB working group that drafted WLR (February--August 2025) and of the subcommittee's response to formal comments (October 2025); they record, in paraphrase, the :40 cutoff, firm-by-default generation-to-load, delegation to the Market Operator, the transmission-rights priority test, and the exclusion of counterflow. The document is publicly posted on naesb.org.},
+}
+
+% Link-only for now: a public NERC report, added 2026-11-10 for the Western context of AGENTS.md; whether to track the PDF is an open decision of dev_notes.md.
+@techreport{nerc_oscillation2019,
+  author       = {{North American Electric Reliability Corporation}},
+  title        = {Interconnection Oscillation Analysis},
+  institution  = {North American Electric Reliability Corporation},
+  address      = {Atlanta, GA},
+  type         = {Reliability Assessment},
+  year         = {2019},
+  month        = jul,
+  url          = {https://www.nerc.com/comm/RSTC/SMWG/Interconnection_Oscillation_Analysis.pdf},
+  note         = {NERC describes the Western Interconnection as characterized by long transmission lines that carry power from generation-rich regions to load centers in California, and the Eastern Interconnection as having a mesh-like transmission line structure (pp.~xii--xiii).},
+}
+
+% Link-only for now: a public utility-association report, added 2026-11-10 for the Western context of AGENTS.md; whether to track the PDF is an open decision of dev_notes.md.
+@techreport{pgp2021retrospective,
+  author       = {{Public Generating Pool}},
+  title        = {Organized Market Retrospective: A Review of Organized Market Efforts in the West},
+  institution  = {Public Generating Pool},
+  type         = {Retrospective Report},
+  year         = {2021},
+  month        = oct,
+  url          = {https://www.publicgeneratingpool.com/studies-reports},
+  note         = {A review of the organized-market initiatives in the West, which finds that all of them struggled over transmission cost allocation, governance and cost relative to benefits (p.~8), that the Western Interconnection holds 38 balancing authority areas and that one transmission provider operates approximately 75 percent of the Northwest's high-voltage transmission (p.~11), and that incremental steps initiated by willing entities proved successful (p.~36).},
+}

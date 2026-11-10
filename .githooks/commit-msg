@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# commit-msg: refuses a Claude authorship trailer in the commit message.
+#
+# The PreToolUse guard (.claude/hooks/guard.py) reads the command an agent sends. This hook
+# reads the message git is about to record, so it also covers an editor, a message file and a
+# commit made outside a Claude session. Activate it once after cloning with
+# git config core.hooksPath .githooks. Exit 1 refuses the commit.
+
+msg_file="$1"
+pattern='Co-Authored-By:[[:space:]]*Claude|Generated with \[Claude Code\]|noreply@anthropic\.com'
+
+if grep -Eiq "$pattern" "$msg_file"; then
+  echo "commit-msg: the message carries a Claude authorship trailer, which this repository refuses. Remove these lines and commit again:" >&2
+  grep -Ein "$pattern" "$msg_file" | sed 's/^/  /' >&2
+  exit 1
+fi
+exit 0

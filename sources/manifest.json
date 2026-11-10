@@ -1,0 +1,293 @@
+[
+ {
+  "key": "caiso_spp_workshop_aug2026",
+  "public_path": "sources/workshops/2026-08-18_congestion_management_examples.pdf",
+  "sha256": "7cf114f8738d40db37b3f01121eb5d28e9c1e394f14901fca297c5d31ec6a972",
+  "accessed": "2026-11-07",
+  "redistribution": "tracked",
+  "reason": "Excerpt of the posted deck; source url, page range and SHA-256 in sources/workshops/manifest.json."
+ },
+ {
+  "key": "caiso_spp_workshop_sep2026",
+  "public_path": "sources/workshops/2026-09-16_transactions_across_market_boundaries.pdf",
+  "sha256": "e0c7fd0cb879ed90218e8cf0a280cf615ea5c99c0810d5222ee7c0d6f5b3b3b0",
+  "accessed": "2026-11-07",
+  "redistribution": "link-only",
+  "reason": "The local file is a PDF export of a copy marked \"ISO Internal\" on every page, and the PPTX that SPP posts in its slide-deck zip carries \"ISO Internal\" in its slide master and layout. It stays local and untracked; sources/excerpts/caiso_spp_workshop_sep2026.md quotes slides 1, 2, 3 and 34 of it."
+ },
+ {
+  "key": "caiso_spp_workshop_sep2026_agenda",
+  "public_path": "sources/ferc-filings-and-iso-policy/caiso_spp_workshop_sep2026_agenda.pptx",
+  "sha256": "5c94ed7bacbf60473e50d06dbff8d26fd7a1a6bde40323ae9ee27197a2444c85",
+  "accessed": "2026-11-07",
+  "redistribution": "link-only",
+  "reason": "The PPTX, identical to the member SPP posts in its slide-deck zip, carries an \"SPP Internal Only\" classification and unpublished speaker notes. It stays local and untracked; no notebook cites it, and the excerpt keeps one sentence of slide 6."
+ },
+ {
+  "key": "caiso_spp_workshop_oct2026",
+  "public_path": "sources/workshops/2026-10-22_loading_relief_examples.pdf",
+  "sha256": "14747b0c098cb691a5d4ac2d908c56680673aa6a515cb1c709cdd7ac5d8632ce",
+  "accessed": "2026-11-07",
+  "redistribution": "tracked",
+  "reason": "Excerpt of the posted deck; source url, page range and SHA-256 in sources/workshops/manifest.json."
+ },
+ {
+  "key": "caiso_edam_techdesc",
+  "public_path": "sources/ferc-filings-and-iso-policy/caiso_edam_techdesc.pdf",
+  "sha256": "b99a4aefeb28006c1898c64a800c5b810a55cca41de7f08ad4309ecbb78fc78f",
+  "accessed": "2026-11-07",
+  "redistribution": "tracked"
+ },
+ {
+  "key": "caiso_dame_edam2023",
+  "public_path": "sources/ferc-filings-and-iso-policy/caiso_dame_edam2023.pdf",
+  "sha256": "067f3afd994527b5f0d225c54656ac1b5747f12c7da65ab799cff960fa1385c4",
+  "accessed": "2026-11-07",
+  "redistribution": "tracked"
+ },
+ {
+  "key": "caiso_dame_edam_tariff2023",
+  "public_path": "sources/ferc-filings-and-iso-policy/caiso_dame_edam_tariff2023.pdf",
+  "sha256": "371e44ca0ea81e125617fa8a0abe7b1588a02ae256556aa1cd0e946cc772b3e8",
+  "accessed": "2026-11-07",
+  "redistribution": "tracked"
+ },
+ {
+  "key": "caiso_bpm_eim_v37",
+  "public_path": "sources/ferc-filings-and-iso-policy/caiso_bpm_eim_v37.pdf",
+  "sha256": "3187ae5ee319fb005d20efc137e1d6592a9cdcf4b4c98054a999afcf93c6933d",
+  "accessed": "2026-11-07",
+  "redistribution": "tracked",
+  "provenance_note": "A local Word export (PDF metadata: Title \"Clean\", Word export dated 2026-05-20). Its hash is not tied to a copy posted by the ISO, and the url is the BPM library landing page."
+ },
+ {
+  "key": "caiso_intertie_modeling2026",
+  "public_path": "sources/ferc-filings-and-iso-policy/caiso_intertie_modeling2026.pdf",
+  "sha256": "fb9e7a54affaace79a385d6e63c2d00f3f4c38e033706793e4ea9b3da004455b",
+  "accessed": "2026-11-07",
+  "redistribution": "tracked"
+ },
+ {
+  "key": "caiso_spp_jointreport2026",
+  "public_path": "sources/ferc-filings-and-iso-policy/caiso_spp_jointreport2026.pdf",
+  "sha256": "fb144c78e1f7938a4705dd83db98389450a4c8b457a1a8733164c9dc079f81a3",
+  "accessed": "2026-11-07",
+  "redistribution": "tracked"
+ },
+ {
+  "key": "eccetf_futurestate2024",
+  "public_path": "sources/ferc-filings-and-iso-policy/eccetf_futurestate2024.pdf",
+  "sha256": "2e038d2c2f701ca4d3ba23807c8f84f42463e0eb148b8491c84ed912795d2e52",
+  "accessed": "2026-11-07",
+  "redistribution": "tracked"
+ },
+ {
+  "key": "naesb_weq_ecrec2025",
+  "public_path": "sources/ferc-filings-and-iso-policy/naesb_weq_ecrec2025.docx",
+  "sha256": "71f1a2ccdebe83f9e48919ae232f9db0155f46eca68d44cc5f254d233ec96de1",
+  "accessed": "2026-11-07",
+  "redistribution": "tracked"
+ },
+ {
+  "key": "pjm_miso_cm2003",
+  "public_path": "sources/ferc-filings-and-iso-policy/pjm_miso_cm2003.pdf",
+  "sha256": "aefa6369656d789e4f85e2aea609cba204f85e732d67a58274e4f66e3cebf1c0",
+  "accessed": "2026-11-07",
+  "redistribution": "tracked"
+ },
+ {
+  "key": "caiso_mlk_review2024",
+  "public_path": "sources/institutional-context/caiso_mlk_review2024.pdf",
+  "sha256": "e816008f80787eefd4d8df18f2a862b3c8fcda59fe61c8b09f1debb0490dcf33",
+  "accessed": "2026-11-07",
+  "redistribution": "tracked"
+ },
+ {
+  "key": "caiso_mppf_mar2024",
+  "public_path": "sources/institutional-context/caiso_mppf_mar2024.pdf",
+  "sha256": "0fa5e0bcc7171e4c70c5d3d5020e5442c1aab8a656e97f8e5e8b8b243d3fcd9c",
+  "accessed": "2026-11-07",
+  "redistribution": "tracked"
+ },
+ {
+  "key": "caiso_winter_report_jan2024",
+  "public_path": "sources/institutional-context/caiso_winter_report_jan2024.pdf",
+  "sha256": "cef601025677eb78b699711444fdb75c2bf3031a90a6338eb99e82ec55ad309f",
+  "accessed": "2026-11-07",
+  "redistribution": "tracked"
+ },
+ {
+  "key": "caiso_dmm_q1_2024",
+  "public_path": "sources/institutional-context/caiso_dmm_q1_2024.pdf",
+  "sha256": "77a2f62f257fa810e31bdc907e1e665fd70259057127d975a7597fb872ebe83f",
+  "accessed": "2026-11-07",
+  "redistribution": "tracked"
+ },
+ {
+  "key": "spp_marketsplus_protocols2026",
+  "public_path": "sources/institutional-context/spp_marketsplus_protocols2026.pdf",
+  "sha256": "6f90c11a96d31af03eb0d3f31bd512b809b94373115797224f2bdaddf9436683",
+  "accessed": "2026-11-07",
+  "redistribution": "link-only",
+  "reason": "First page reads \"Copyright © 2025 by Southwest Power Pool, Inc. All rights reserved.\"; local copy untracked."
+ },
+ {
+  "key": "naesb_wicmwg_minutes2025",
+  "public_path": "sources/institutional-context/naesb_wicmwg_minutes2025/weq_bps_2025-10-17_draft.docx",
+  "sha256": "2dfbea31350e88b4e65ba741076e73165ac8c922482e3410e6b36a032dfe4778",
+  "accessed": "2026-11-07",
+  "redistribution": "tracked",
+  "item": "weq_bps_2025-10-17_draft.docx"
+ },
+ {
+  "key": "naesb_wicmwg_minutes2025",
+  "public_path": "sources/institutional-context/naesb_wicmwg_minutes2025/wicmwg_2025-02-20_final.docx",
+  "sha256": "86460d5ee3d532f65d701bd6ff57d1576c6a018300ef34c0c16e5ea4c23f3fad",
+  "accessed": "2026-11-07",
+  "redistribution": "tracked",
+  "item": "wicmwg_2025-02-20_final.docx"
+ },
+ {
+  "key": "naesb_wicmwg_minutes2025",
+  "public_path": "sources/institutional-context/naesb_wicmwg_minutes2025/wicmwg_2025-03-18_draft.docx",
+  "sha256": "8ea49e1b67668d52248ed26a06cfe6a842159504dd357dfedb4441cad0105640",
+  "accessed": "2026-11-07",
+  "redistribution": "tracked",
+  "item": "wicmwg_2025-03-18_draft.docx"
+ },
+ {
+  "key": "naesb_wicmwg_minutes2025",
+  "public_path": "sources/institutional-context/naesb_wicmwg_minutes2025/wicmwg_2025-04-16_final.docx",
+  "sha256": "747510f15eb12a1f2347bb08477e004c74b9dd07068363eddea888ccaf32806d",
+  "accessed": "2026-11-07",
+  "redistribution": "tracked",
+  "item": "wicmwg_2025-04-16_final.docx"
+ },
+ {
+  "key": "naesb_wicmwg_minutes2025",
+  "public_path": "sources/institutional-context/naesb_wicmwg_minutes2025/wicmwg_2025-05-16_draft.docx",
+  "sha256": "60f9e834ba60ad19b20122f3ea8e0c42f0d391e3b49f30d4acd129ca58d203ac",
+  "accessed": "2026-11-07",
+  "redistribution": "tracked",
+  "item": "wicmwg_2025-05-16_draft.docx"
+ },
+ {
+  "key": "naesb_wicmwg_minutes2025",
+  "public_path": "sources/institutional-context/naesb_wicmwg_minutes2025/wicmwg_2025-06-17_final.docx",
+  "sha256": "511793749606faceccd8d547c58be8662a5346fd77bebd6f490a012b209c3129",
+  "accessed": "2026-11-07",
+  "redistribution": "tracked",
+  "item": "wicmwg_2025-06-17_final.docx"
+ },
+ {
+  "key": "naesb_wicmwg_minutes2025",
+  "public_path": "sources/institutional-context/naesb_wicmwg_minutes2025/wicmwg_2025-07-17_draft.docx",
+  "sha256": "2420c301e6309a4ccbc85907d4f8ecc35db33244bbcb19d53963b1c01d0729aa",
+  "accessed": "2026-11-07",
+  "redistribution": "tracked",
+  "item": "wicmwg_2025-07-17_draft.docx"
+ },
+ {
+  "key": "naesb_wicmwg_minutes2025",
+  "public_path": "sources/institutional-context/naesb_wicmwg_minutes2025/wicmwg_2025-07-28_final.docx",
+  "sha256": "412495b0e511ad24f09feb57e3934630fc03bfc21df04c2a97d5345b34d838a2",
+  "accessed": "2026-11-07",
+  "redistribution": "tracked",
+  "item": "wicmwg_2025-07-28_final.docx"
+ },
+ {
+  "key": "naesb_wicmwg_minutes2025",
+  "public_path": "sources/institutional-context/naesb_wicmwg_minutes2025/wicmwg_2025-08-07_final.docx",
+  "sha256": "bcab4d9657e205d1465d0acb3b0e3ef736ce435daefe6366c69da04186714398",
+  "accessed": "2026-11-07",
+  "redistribution": "tracked",
+  "item": "wicmwg_2025-08-07_final.docx"
+ },
+ {
+  "key": "naesb_wicmwg_minutes2025",
+  "public_path": "sources/institutional-context/naesb_wicmwg_minutes2025/wicmwg_2025-08-13_final.docx",
+  "sha256": "6158ba7e6dcd74b3c12aa96c7d41ee3a4a32b9a31d2b5faf0c8b10e7d17d2b7a",
+  "accessed": "2026-11-07",
+  "redistribution": "tracked",
+  "item": "wicmwg_2025-08-13_final.docx"
+ },
+ {
+  "key": "naesb_wicmwg_minutes2025",
+  "public_path": "sources/institutional-context/naesb_wicmwg_minutes2025/wicmwg_2025-09-02_final.docx",
+  "sha256": "23239bb25bb7c34c2b54fc84844264232fca72b84fc1a70dc2272c7144e396a4",
+  "accessed": "2026-11-07",
+  "redistribution": "tracked",
+  "item": "wicmwg_2025-09-02_final.docx"
+ },
+ {
+  "key": "cadwalader1999coordinating",
+  "public_path": "sources/academic-literature/cadwalader1999coordinating.pdf",
+  "sha256": "2dc4c2c6c06eb8b74ddb3820b3b9863ff667e2ab76b68902cc54bc5a8749d911",
+  "accessed": "2026-11-07",
+  "redistribution": "link-only",
+  "reason": "Academic paper; link-only by policy; local copy untracked."
+ },
+ {
+  "key": "thurner2018pandapower",
+  "public_path": null,
+  "sha256": null,
+  "accessed": "2026-11-07",
+  "redistribution": "link-only",
+  "reason": "Book or journal article; link-only by policy.",
+  "url": "https://doi.org/10.1109/TPWRS.2018.2829021"
+ },
+ {
+  "key": "anderson1977power",
+  "public_path": null,
+  "sha256": null,
+  "accessed": "2026-11-07",
+  "redistribution": "link-only",
+  "reason": "Book or journal article; link-only by policy.",
+  "url": "https://openlibrary.org/works/OL1920495W"
+ },
+ {
+  "key": "ostrom2009nobellecture",
+  "public_path": null,
+  "sha256": null,
+  "accessed": "2026-11-10",
+  "redistribution": "link-only",
+  "reason": "Academic lecture; link-only by policy.",
+  "url": "https://www.nobelprize.org/uploads/2018/06/ostrom_lecture.pdf"
+ },
+ {
+  "key": "ostrom1990governing",
+  "public_path": null,
+  "sha256": null,
+  "accessed": "2026-11-10",
+  "redistribution": "link-only",
+  "reason": "Book or journal article; link-only by policy.",
+  "url": "https://doi.org/10.1017/CBO9781316423936"
+ },
+ {
+  "key": "kiesling2026rto",
+  "public_path": null,
+  "sha256": null,
+  "accessed": "2026-11-10",
+  "redistribution": "link-only",
+  "reason": "Book or journal article; link-only by policy.",
+  "url": "https://doi.org/10.1017/S1744137426100423"
+ },
+ {
+  "key": "nerc_oscillation2019",
+  "public_path": null,
+  "sha256": null,
+  "accessed": "2026-11-10",
+  "redistribution": "link-only",
+  "reason": "A public NERC report kept link-only pending an open decision of dev_notes.md.",
+  "url": "https://www.nerc.com/comm/RSTC/SMWG/Interconnection_Oscillation_Analysis.pdf"
+ },
+ {
+  "key": "pgp2021retrospective",
+  "public_path": null,
+  "sha256": null,
+  "accessed": "2026-11-10",
+  "redistribution": "link-only",
+  "reason": "A public utility-association report kept link-only pending an open decision of dev_notes.md.",
+  "url": "https://www.publicgeneratingpool.com/studies-reports"
+ }
+]

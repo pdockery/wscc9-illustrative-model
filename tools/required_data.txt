@@ -1,0 +1,12 @@
+# required_data.txt: the data files the tests need, read by tools/doctor.py.
+#
+# One entry per line, three fields separated by " | ":
+#   path    repository-relative, with * and ? as glob wildcards; a folder counts when it exists
+#   kind    local   = ignored by git, so a fresh clone lacks it and it is rebuilt or copied by hand
+#           tracked = in git, so only a partial checkout or a moved file lacks it
+#   tests   the tests that skip or fail when the path is absent, as file::name, separated by ", "
+# A skip is silent in a passing suite, so doctor.py reports every absent path as a problem.
+# Measured 2026-11-10 from the skip and fail conditions of tests/. A new test that needs a
+# data file adds its line here.
+
+tests/golden/golden.json | tracked | tests/test_golden.py::test_scenario_matches_golden, tests/test_golden.py::test_scenario_set_unchanged, tests/test_schedule_limit.py::test_canonical_clearing_reproduces_the_frozen_rent_and_the_pool

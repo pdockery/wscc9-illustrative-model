@@ -1,0 +1,10 @@
+{
+  "_about": "This repository's facts for .claude/hooks/guard.py, whose RepoRules docstring names each key. The file belongs to this repository; the guard beside it is a byte-for-byte copy that MANIFEST.md hashes.",
+  "repository": "public",
+  "never_committed": [],
+  "ignored_only_copy": [],
+  "commit_hook_rules": "the trailer, file-size and sources rules",
+  "allowed_owners": ["pdockery"],
+  "defect_destination": "",
+  "notes": {}
+}

@@ -1,6 +1,13 @@
-# Pinned-light: Colab already ships numpy/pandas/scipy/matplotlib.
-# These three are the extras the notebooks need.
+# The packages the notebooks and lib/ import. Colab ships numpy, pandas, scipy and
+# matplotlib, so a Colab bootstrap installs only pypsa, pandapower and pycirclize.
+# Tested on 2026-11-07 with numpy 2.3.5, pandas 2.3.3, scipy 1.16.3, matplotlib 3.10.8,
+# pypsa 1.1.2, pandapower 3.4.0 and pycirclize 1.10.1 under Python 3.12.
+numpy
+pandas
+scipy
+matplotlib
 pypsa
 pandapower
 pycirclize
-# (numpy, pandas, scipy, matplotlib are pulled in transitively)
+# A local run opens the notebooks in JupyterLab.
+jupyterlab

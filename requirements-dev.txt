@@ -1,0 +1,12 @@
+# The harness: the tests, the headless re-run (tools/nb_execute.py), the lint, the type
+# check and the frontmatter test. Pinned at the versions ruff.toml and mypy.ini were
+# measured with. constraints.txt pins every other package of the tested environment:
+# pip install -r requirements-dev.txt -c constraints.txt
+-r requirements.txt
+pytest==9.0.2
+nbformat==5.10.4
+nbconvert==7.17.0
+ipykernel==7.2.0
+ruff==0.15.5
+mypy==1.19.1
+pyyaml==6.0.3

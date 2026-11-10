@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# pre-commit: refuses three kinds of staged path.
+#
+# 1. A file over 50 MB, the size past which GitHub warns.
+# 2. A path under sources/academic-literature/, the copyrighted papers this repository
+#    keeps link-only.
+# 3. A path under sources/ that sources/.gitignore (or any ignore rule) lists, checked
+#    with git check-ignore --no-index so a forced add is caught.
+#
+# The hook reads only the index and never stages, unstages or commits. Activate it once
+# after cloning with git config core.hooksPath .githooks. Exit 1 refuses the commit.
+
+limit=$((50 * 1024 * 1024))
+status=0
+
+while IFS= read -r -d '' path; do
+  case "$path" in
+    sources/academic-literature/*)
+      echo "pre-commit: $path is under sources/academic-literature/, which this repository keeps link-only. Unstage it with: git restore --staged -- \"$path\"" >&2
+      status=1
+      ;;
+    sources/*)
+      if git check-ignore -q --no-index -- "$path"; then
+        echo "pre-commit: $path is listed in an ignore file under sources/ and is not distributed. Unstage it with: git restore --staged -- \"$path\"" >&2
+        status=1
+      fi
+      ;;
+  esac
+  size=$(git cat-file -s ":$path" 2>/dev/null || echo 0)
+  if [ "$size" -gt "$limit" ]; then
+    echo "pre-commit: $path is $((size / 1048576)) MB staged, over the 50 MB limit. Re-execute the notebook or clear its large stored outputs, keep deck figures at the default inline dpi, and stage it again." >&2
+    status=1
+  fi
+done < <(git diff --cached --name-only --diff-filter=ACMR -z)
+
+exit "$status"

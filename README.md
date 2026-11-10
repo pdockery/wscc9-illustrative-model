@@ -1,161 +1,66 @@
-# WSCC 9-bus illustrative models
+# WSCC 9-bus seams examples
 
-A **numbered series of self-contained teaching notebooks** that build nodal pricing,
-congestion rent, and market-seams concepts from the ground up on the classic **WSCC
-9-bus** network. Each notebook builds the 9-bus case from `pandapower`'s built-in
-network, clears a DC-OPF with PTDF shift factors, and renders matching network +
-nodal-dispatch (chord) figures. No external data files are needed.
+This repository holds the 9-bus examples Paul Dockery presented at the CAISO-SPP joint market seams workshops of 2026, one notebook per deck, and a sandbox notebook. The network is the WSCC/IEEE 9-bus test case (`pandapower.networks.case9`), cleared as a lossless DC dispatch with PTDF shift factors, with two markets on one network. Each deck notebook reproduces its deck's examples in slide order. Each notebook re-executes from its own cells, and its knobs sit in `# -- EDIT --` cells.
 
-The notebooks share a set of small teaching libraries, so the modeling stays consistent
-across the series and a student can read a notebook top-to-bottom or open the library to
-see how a piece works. The numbering is a learning pathway — the **hundreds digit is the
-difficulty tier** (100 fundamentals, 200 core issue, 300 advanced) and the **last digit
-is the track**: x01 congestion-revenue allocation, x02 market seams (and the bilateral
-scheduling that precedes a centralized market, 102), x03 transmission service, x11
-available transfer capability, x22 intertie scheduling.
+## The workshops
 
-## Run it in your browser (no install)
+| date | workshop | deck excerpt | notebook | Colab |
+|---|---|---|---|---|
+| 2026-08-18 | No. 2, Salt Lake City: *Congestion Management Examples* | [`2026-08-18_congestion_management_examples.pdf`](sources/workshops/2026-08-18_congestion_management_examples.pdf), pages 91 to 109 of the [posted deck](https://www.westernenergymarkets.com/documents/presentation-market-seams-workshop-aug-18-2026.pdf) | [`workshop2_congestion_management.ipynb`](workshop2_congestion_management.ipynb) | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pdockery/wscc9-illustrative-model/blob/main/workshop2_congestion_management.ipynb) |
+| 2026-09-16 | No. 3, Lakewood: *Transactions across market boundaries* | link-only, pages 1 to 34 of the deck in the [posted slide-deck zip](https://spp.org/documents/77788/joint%20market%20seams%20workshop%20slide%20decks%2020270916.zip) from the [workshop page](https://spp.org/calendar-list/joint-market-seams-workshops-20260916/), marked "ISO Internal"; SPP posts the zip under the date 20270916 | [`workshop3_transactions_across_boundaries.ipynb`](workshop3_transactions_across_boundaries.ipynb) | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pdockery/wscc9-illustrative-model/blob/main/workshop3_transactions_across_boundaries.ipynb) |
+| 2026-10-22 | No. 4, Salt Lake City: *Western Loading Relief process examples* | [`2026-10-22_loading_relief_examples.pdf`](sources/workshops/2026-10-22_loading_relief_examples.pdf), pages 52 to 86 of the [posted deck](https://www.westernenergymarkets.com/documents/presentation-joint-market-seams-workshop-oct-22-2026.pdf) | [`workshop4_loading_relief.ipynb`](workshop4_loading_relief.ipynb) | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pdockery/wscc9-illustrative-model/blob/main/workshop4_loading_relief.ipynb) |
+| any | the sandbox | none | [`101_sandbox.ipynb`](101_sandbox.ipynb) | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pdockery/wscc9-illustrative-model/blob/main/101_sandbox.ipynb) |
 
-Click a badge, then **Runtime → Run all**. The first cell installs the few extra
-packages and pulls in the helper modules automatically.
+`sources/workshops/manifest.json` records each deck's posted source, its page range, its access date and the SHA-256 of the source and the excerpt. A deck notebook's figures carry no titles or legends, because the slide beside them carries those.
 
-### Fundamentals (start here)
+## The sandbox
 
-- **101 · Nodal market fundamentals** — nodal LMPs and congestion rent, the transport
-  (net-interchange) constraint and transfer rent, self-schedules, the three settlement
-  ledgers, and a fully configurable sandbox.
-  [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pdockery/wscc9-illustrative-model/blob/main/101_nodal_market_fundamentals.ipynb)
+`101_sandbox.ipynb` exposes the engine's configurable features in one `# -- EDIT --` cell, and its closing section lists the features it does not carry. The EDIT cell sets the ratings, the fleet and the loads, the offer form, one market or two independent markets on the same network, the monitored and activated line sets, the interfaces and transfers, self-schedules, export bids and import offers, a scheduling point with an interchange scheduling limit at a transition bus, the real-time relief, the tags and the loading relief, and the congestion and transfer allocation methods. A new example belongs there, so that each deck notebook stays on its deck.
 
-- **102 · Bilateral trading as a double auction** — a numerical model of the bilateral
-  world, which has **no central clearing**: it produces the day-ahead pre-schedule (the
-  bilateral analogue of unit commitment) as a **repeated discriminatory double auction**
-  (Nicolaisen–Petrov–Tesfatsion). Over rounds of back-and-forth, sellers and buyers draw
-  offers from their perceived price distributions and concede until the must-serve load
-  procures its **full** volume; each pair settles at the bid-ask **midpoint**. Three levers,
-  one section each: the **number of parties** (liquidity — more parties tighten the spread,
-  Rustichini–Satterthwaite–Williams / Gode–Sunder); **risk aversion and the price-risk
-  distribution** (the two-sided forward premium, Bessembinder–Lemmon — each generator a
-  single fixed marginal cost); and **real-time balancing** — the rights-feasible schedule
-  overloads the grid, and a causer-pays **redispatch** restores feasibility. Mirrors 101's
-  formal exposition. Builds on `atc.py` + `bilateral.py`.
-  [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pdockery/wscc9-illustrative-model/blob/main/102_bilateral_spot_iteration.ipynb)
+## Running the notebooks
 
-- **111 · ATC and the simultaneous-feasibility test** — the OATT / contract-path world
-  that precedes nodal pricing: each generator first **plans its portfolio** of rights
-  to profitable load centers, then point-to-point service, Available Transfer Capability
-  (`ATC = TTC − TRM − ETC − CBM`), and the simultaneous-feasibility test a *set* of
-  awards must pass. Shows how ATC posted path-by-path, and ATC summed across two
-  balancing authorities, **oversubscribes** the feasible set through loop flow.
-  Builds on `atc.py` + `bilateral.py`.
-  [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pdockery/wscc9-illustrative-model/blob/main/111_atc_simultaneous_feasibility.ipynb)
+**On Colab.** The badge opens the notebook. Its first cell installs `pypsa`, `pandapower` and `pycirclize` and fetches the 14 library modules from this repository's `lib/` on `main`.
 
-- **112 · Three balancing authorities** — a third BA and single-node BAs (co-located
-  generation and load); three-BA dispatch, per-BA settlement, and autarky-vs-unified.
-  [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pdockery/wscc9-illustrative-model/blob/main/112_three_ba_fundamentals.ipynb)
+**Locally.** Python 3.10 or later.
 
-### Core issues
-
-- **201 · Congestion-revenue allocation** — two balancing authorities; how congestion
-  (and transfer) revenue is allocated, Method 1 vs Method 2.
-  [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pdockery/wscc9-illustrative-model/blob/main/201_congestion_revenue_allocation.ipynb)
-
-- **202 · The market seam** — the market clearing engine as an object: three sets
-  (resources, loads, an activated constraint set) on a shared network, two engines
-  instantiated side by side, each seam line allocated to one manager (the mirror of the
-  two-BA tie assignment) with the superposition priced by neither — the formulations, a
-  worked example, and a sandbox.
-  [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pdockery/wscc9-illustrative-model/blob/main/202_market_seam.ipynb)
-
-- **204 · Congestion & constraint management at the seam** — the operator-to-operator
-  problem: flow superposition on shared transmission elements, under-accommodation
-  (overload, then real-time relief at a premium, and the day-ahead-to-real-time
-  settlement gap that relief opens) vs over-accommodation (ex-ante reservations
-  idling capability, and the phantom congestion they price).
-  [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pdockery/wscc9-illustrative-model/blob/main/204_seam_congestion_management.ipynb)
-
-- **204a · Two coordination designs — dividing the transmission element or dividing
-  the relief** — the firm flow entitlement (a standing quota on the coordinated line)
-  against freeze-and-share (caps set from a study when the rule triggers). Each design's
-  signature failure: the quota's phantom congestion, priced against a line with headroom;
-  freeze-and-share's detection risk and its baseline incentive. Both drawn from each
-  market's chair and as the combined power flow.
-  [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pdockery/wscc9-illustrative-model/blob/main/204a_seam_coordination_designs.ipynb)
-
-- **205 · Interchange at the seam** — the participant-to-participant problem: the seam
-  dual gap (two prices at every bus), the scheduled interchange and the welfare it
-  closes, a participant-initiated trade's four-leg settlement, the latency and risk of
-  committing before either market clears, and the seam ledger.
-  [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pdockery/wscc9-illustrative-model/blob/main/205_seam_interchange.ipynb)
-
-- **212 · Two markets and a transfer** — two markets on three BAs: Market A is two
-  non-connected BAs coordinated by a transfer, which Market B wheels; the transaction
-  P&L, inefficient accommodation, the risk the transmission customer carries, the
-  parallel-timing problem, and a sandbox.
-  [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pdockery/wscc9-illustrative-model/blob/main/212_two_market_transfer.ipynb)
-
-### Advanced
-
-- **222 · Intertie schedule modeling — SP-Tie vs GAP-Tie** — where a scheduled
-  import enters the network, and what the placement costs. The schedule modeled at
-  the scheduling point (SP-Tie) against the same schedule sourced from the exporter's
-  generation-aggregation point (GAP-Tie), the phantom congestion the first can report
-  on a line that is not physically loaded, the mirror case where the low-cost market
-  exports as a demand bid, and the expected cost of the placement error once both
-  markets' costs are uncertain.
-  [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pdockery/wscc9-illustrative-model/blob/main/222_intertie_sp_gap_tie.ipynb)
-
-- **301 · Two settlement footprints** — the moving day-ahead (EDAM) / real-time (WEIM)
-  market boundary; the exogenous→endogenous transition, the cross-settlement position
-  ledger, a contingency, and its accommodation.
-  [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pdockery/wscc9-illustrative-model/blob/main/301_two_settlement_congestion.ipynb)
-
-- **302 · A contingency in the neighbouring market** — two co-equal markets and a
-  contingency on the other market's circuit; blind interference, inefficient
-  accommodation, and coordination, each shown as four views (Market A, Market B, the
-  Combined line, and the Unified clearing).
-  [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pdockery/wscc9-illustrative-model/blob/main/302_two_market_contingency.ipynb)
-
-- **331 · The self-schedule incentive** — does the congestion-revenue allocation rule
-  change what participants bid? A rebate keyed to balanced firm-rights self-schedules
-  makes out-of-merit self-scheduling privately rational (and can displace in-merit
-  generation), while counterflow needs no special settlement.
-  [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/pdockery/wscc9-illustrative-model/blob/main/331_self_schedule_incentive.ipynb)
-
-## What's here
-
-| File | Role |
-|------|------|
-| `101_nodal_market_fundamentals.ipynb` | Fundamentals: nodal LMPs, congestion + transfer rent, self-schedules, ledgers, sandbox |
-| `102_bilateral_spot_iteration.ipynb` | Fundamentals: bilateral trading as a repeated double auction (full procurement), levers for liquidity / risk premium, causer-pays real-time balancing |
-| `111_atc_simultaneous_feasibility.ipynb` | Fundamentals: portfolio planning, ATC, the simultaneous-feasibility test, combined-ATC oversubscription |
-| `112_three_ba_fundamentals.ipynb` | Fundamentals: a third BA and single-node BAs |
-| `201_congestion_revenue_allocation.ipynb` | Two-BA congestion-revenue allocation (Method 1/2) |
-| `202_market_seam.ipynb` | The engine as three sets on a shared network; two engines side by side; formulations, example, sandbox |
-| `204_seam_congestion_management.ipynb` | Superposition; under- vs over-accommodation; the two-settlement congestion rent and the reservation error |
-| `204a_seam_coordination_designs.ipynb` | Firm flow entitlement vs freeze-and-share; phantom congestion, detection risk, the baseline incentive; per-market and combined views |
-| `205_seam_interchange.ipynb` | The seam dual gap; scheduled interchange; trade latency and risk; the seam ledger |
-| `212_two_market_transfer.ipynb` | Two markets on three BAs; transfer, wheeling, accommodation, timing risk, sandbox |
-| `222_intertie_sp_gap_tie.ipynb` | Intertie schedule placement: SP-Tie vs GAP-Tie; phantom congestion; export as a demand bid; expected cost under cost uncertainty |
-| `301_two_settlement_congestion.ipynb` | Moving day-ahead/real-time boundary; contingency + accommodation |
-| `302_two_market_contingency.ipynb` | Two markets; a contingency in the other market; four-view comparison |
-| `331_self_schedule_incentive.ipynb` | The self-schedule incentive: schedule-keyed rebates, out-of-merit gaming, counterflow |
-| `wscc9_model.py` | Network, fleet/loads, the market-engine factory, layout constants |
-| `footprints.py` | Footprint partitions (balancing authorities / markets) and line assignment |
-| `revenue_allocation.py` | Settlement, congestion/transfer-rent allocation, position ledgers |
-| `atc.py` | Available Transfer Capability, path TTC, and the simultaneous-feasibility test (used by 102/111) |
-| `bilateral.py` | The repeated bilateral double auction (`double_auction_clear`, forward risk, causer-pays redispatch) and the Cournot must-serve model + portfolio planning (used by 102/111) |
-| `wscc9_figures.py` | The shared network + nodal-dispatch composite figures |
-| `ieee9_network.py` | Builds the IEEE/WSCC 9-bus PyPSA network |
-| `seams_engine.py` | PTDF DC-OPF clearing engine (`scipy.linprog`) + LMP decomposition |
-| `nodal_plot.py` | Network-topology and nodal-dispatch (chord) figures |
-| `requirements.txt` | Extra packages (Colab ships the rest) |
-
-## Run it locally
-
-```bash
+```
 pip install -r requirements.txt
-jupyter lab        # open any numbered notebook and Run All
+jupyter lab
 ```
 
-Python 3.10+; the notebooks use `numpy`, `pandas`, `scipy`, `matplotlib`, `pypsa`,
-`pandapower`, and `pycirclize`.
+**For development.** The tested environment, the commit hooks and the readiness report, once after cloning:
+
+```
+pip install -r requirements-dev.txt -c constraints.txt
+git config core.hooksPath .githooks
+python tools/doctor.py
+```
+
+`constraints.txt` pins every package of the tested environment, and `requirements.txt` stays unpinned for Colab. The commit hooks of `.githooks/` refuse an AI authorship trailer, a file over 50 MB and a source the repository keeps link-only. `tools/doctor.py` reports whether the interpreter, its packages, the library copy and the hooks path are ready, and changes nothing. `LAB_PY`, where it is set, names the interpreter it examines.
+
+**Headless.** A notebook re-executes in place and records the library state it ran under in its metadata.
+
+```
+python tools/nb_execute.py workshop2_congestion_management.ipynb
+python tools/nb_staleness.py
+```
+
+`tools/nb_staleness.py` lists the notebooks whose stored results predate a library change. `tools/README.md` describes each tool. `MPLBACKEND=Agg` is not set for a run, because it strips the stored figures.
+
+**Tests.** `python tools/check.py` runs the lint of the changed Python files, the harness tests and the model tests, from the repository root. `python tools/check.py --full` adds the tests marked `slides`, which execute each deck notebook and check that its clears give every number its slides print. The suites also run alone: `python -m pytest tests -q`, and `python -m pytest tests -q -m slides` for the slide checks.
+
+## The library
+
+`lib/` holds the 14 modules of a shared 9-bus library, copied in byte for byte. `lib/MANIFEST.md` records each module's SHA-256 and the date of the copy, and a change arrives as a fresh copy. `seams_engine.py` is the engine, and its module docstring maps the code to the notation the notebooks use. `NOTEBOOK_RECORD.md` holds the record of the notebooks and an index of the library's public functions, module by module.
+
+## The sources
+
+`sources/references.bib` holds every source the notebooks cite, each entry with its `url` and a `note` on its bearing. Public documents of the ISOs, RTOs, FERC, NERC, NAESB and the workshop hosts are tracked under `sources/`. Academic papers and books are link-only, so their entries carry the `url` and no file is committed. `sources/excerpts/<key>.md` holds the passages the notebooks rest on, verbatim, with each page and the notebook section that uses it.
+
+## Licence
+
+The code is under the MIT licence in `LICENSE`, whose scope paragraph names what it does not cover. The documents under `sources/` stay under their publishers' terms.
+
+## Working with an agent
+
+`AGENTS.md` orients any agent tool in the repository, and `CLAUDE.md` imports it and adds the Claude Code layer of skills, hooks and permissions. `prompts/01-orientation.md` is the page for a person joining, with the prompt that starts a session in any agent tool and `/orientation` in Claude Code. The starters beside it invoke the skills in `.claude/skills/`, one per kind of work: explaining an example, re-running a notebook, changing a notebook or the sandbox, and staging named paths. In Claude Code a state brief opens each session, and an advisory clock-out check runs when a session stops or compacts.

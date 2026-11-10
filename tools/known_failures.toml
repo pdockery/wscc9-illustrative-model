@@ -1,0 +1,15 @@
+# known_failures.toml: the test failures tools/check.py accepts, each with its cause and the
+# event that removes it. The file holds no entry, and dev_notes.md is the record an entry cites.
+#
+# check.py fails a tier on a failure this file does not list, and on a listed failure that now
+# passes, because the entry is then stale and comes out. A listed test that skipped or did not
+# run is reported and does not fail the tier. Strict xfail is not used, because a marker in the
+# test would hide the failure from a plain pytest run.
+#
+# Fields of each [[failure]]:
+#   id           the pytest node id, relative to the repository root
+#   tier         the check.py tier that runs it (lint, harness, tests, slides)
+#   cause        what fails and why, as far as the record states it
+#   since        the first dated record of the failure
+#   record       the dev_notes.md entry that states it
+#   remove_when  the event after which the entry comes out

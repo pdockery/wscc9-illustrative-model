@@ -1,0 +1,464 @@
+# SPDX-FileCopyrightText: ASSUME Developers
+#
+# SPDX-License-Identifier: MIT
+
+"""WSCC/IEEE 9-bus teaching scenario: network, shift factors, and market engine.
+
+This is the scenario layer the illustrative notebooks share. It sits on top of
+two primitive modules and adds the one fixed teaching set-up they all reuse:
+
+    ``ieee9_network.build_ieee9_network``  →  the canonical 9-bus PyPSA case
+    ``seams_engine.compute_ptdf``          →  the DC shift-factor matrix (PTDF)
+    ``seams_engine.MarketEngine``          →  a resource/load/constraint partition
+
+On that base it pins down the **teaching fleet** (which unit sits where, at what
+cost), the **load pattern**, and the **drawing layout** (ring order, rotation,
+bus colors) so that every notebook — and every figure within a notebook — reads
+the same way.
+
+Design rule (the notebooks keep their knobs visible): this module holds *logic*
+and the *immutable base case* only. The canonical fleet/loads are exposed as
+``DEFAULT_GEN_FLEET`` / ``DEFAULT_LOADS`` and used as defaults, but a notebook's
+own ``# --EDIT--`` cell may override any number and pass it back in (e.g.
+``make_engine(..., gen_fleet=my_fleet)`` or re-bidding an engine's gens after the
+fact). Nothing here decides a market *issue*; that is the job of the issue
+notebooks.
+
+Generators (the teaching price gradient — note bus 3 is the CHEAPEST, unlike the
+raw ``ieee9_network`` cost map):
+
+    gen_slack_0  bus 1  $50/MWh  250 MW   — slack, most expensive
+    gen_0        bus 2  $35/MWh  300 MW   — mid-merit
+    gen_1        bus 3  $20/MWh  170 MW   — cheapest
+
+Loads: 90 MW @ bus 5, 100 MW @ bus 7, 125 MW @ bus 9.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
+import pandas as pd
+
+import nodal_plot
+from ieee9_network import build_ieee9_network
+from seams_engine import MarketEngine, compute_ptdf
+from nodal_plot import assign_bus_colors
+
+if TYPE_CHECKING:
+    from collections.abc import Collection, Iterable
+    from types import SimpleNamespace
+
+    import pypsa
+    from footprints import Footprints
+    from lab_types import (
+        Area,
+        Bus,
+        BusValues,
+        Fleet,
+        Line,
+        LineValues,
+        Loads,
+        Resource,
+    )
+    from risk import LogitNormal, Normal
+    from seams_engine import CaseNetwork, PTDFData
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# The teaching scenario (fleet, loads) — base defaults; notebooks may override
+# ──────────────────────────────────────────────────────────────────────────
+#: Resource stack on the shared network. ``{gen_id: {bus, cost $/MWh, p_nom MW}}``.
+DEFAULT_GEN_FLEET: Fleet = {
+    "gen_slack_0": {"bus": "1", "cost": 50.0, "p_nom": 250.0},   # slack unit
+    "gen_0":       {"bus": "2", "cost": 35.0, "p_nom": 300.0},   # mid-merit
+    "gen_1":       {"bus": "3", "cost": 20.0, "p_nom": 170.0},   # cheapest unit
+}
+
+#: Fixed load at each bus (MW).
+DEFAULT_LOADS: Loads = {"5": 90.0, "7": 100.0, "9": 125.0}
+
+
+def fleet_with_backstop(
+    price: float = 90.0,
+    buses: Iterable[Bus] | None = None,
+    p_nom: float | dict[Bus, float] | None = None,
+    base: Fleet | None = None,
+    loads: Loads | None = None,
+) -> Fleet:
+    """The teaching fleet plus a high-priced **residual backstop** unit at each load
+    bus (default the load buses), priced above every real unit so it clears only as
+    a last resort -- the balancing resource a balancing authority leans on when a
+    constraint chokes off cheaper delivery, so a self-solving BA is always feasible.
+    Excluded from the bilateral double auction in notebook 102; in the nodal engine
+    it is simply merit-order-last. The redispatch premium a BA pays is the cost of
+    this backstop relative to the cheaper resources a unified engine would deploy.
+
+    Each backstop is sized to its bus's own load by default (``p_nom=None``): a load
+    bus's balancing reserve need not exceed the load it backs, which keeps the
+    merit-order picture honest. Pass a scalar ``p_nom`` to override every size.
+
+    ``p_nom`` may also be a dict ``{bus: MW}`` (added 2026-10-13 for 304a). A dict
+    sizes each backstop from its own entry, and when ``buses`` is not given the
+    dict's keys are the backstop buses; when ``buses`` is given, every bus in it
+    must have an entry in the dict, or a ``KeyError`` is raised. A scalar or
+    ``None`` behaves exactly as before.
+    """
+    base = DEFAULT_GEN_FLEET if base is None else base
+    loads = DEFAULT_LOADS if loads is None else loads
+    per_bus = ({str(b): float(v) for b, v in p_nom.items()}
+               if isinstance(p_nom, dict) else None)
+    if buses is None:
+        buses = list(per_bus) if per_bus is not None else list(DEFAULT_LOADS)
+    else:
+        buses = [str(b) for b in buses]
+    fleet = dict(base)
+    for b in buses:
+        if per_bus is not None:
+            cap = per_bus[str(b)]
+        else:
+            cap = float(p_nom) if p_nom is not None else float(loads.get(str(b), 0.0))  # type: ignore[arg-type]  # per_bus None means p_nom is not a dict
+        fleet[f"backstop_{b}"] = {"bus": str(b), "cost": float(price), "p_nom": cap}
+    return fleet
+
+#: Three-BA teaching scenario (notebooks 112 / 212). Nodes 2 and 3 each carry gen +
+#: load and are individually self-sufficient (node 3 cheaper + more load; node 2
+#: pricier + less load); the two canonical cheap units move to the formerly-transit
+#: nodes 6 and 8 so they sit inside the "rest of network" BA. The clearing uses these
+#: via ``make_engine(gen_fleet=FLEET_3BA, loads=LOADS_3BA)`` — the base PyPSA network
+#: (topology / reactances) is unchanged.
+FLEET_3BA: Fleet = {
+    "gen_1": {"bus": "1", "cost": 50.0, "p_nom": 250.0},   # slack (rest-of-network BA)
+    "gen_6": {"bus": "6", "cost": 20.0, "p_nom": 170.0},   # cheapest — moved from node 3
+    "gen_8": {"bus": "8", "cost": 35.0, "p_nom": 300.0},   # mid-merit — moved from node 2
+    "gen_3": {"bus": "3", "cost": 25.0, "p_nom": 160.0},   # node-3 BA: cheaper, surplus exports
+    "gen_2": {"bus": "2", "cost": 48.0, "p_nom": 90.0},    # node-2 BA: pricier
+}
+LOADS_3BA = {"2": 60.0, "3": 120.0, "5": 90.0, "7": 100.0, "9": 125.0}
+
+#: Ordered bus names of the case (sorted as the engine sorts them).
+BUSES = [str(i) for i in range(1, 10)]
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Drawing layout — applied to every node + circlize plot so they read alike
+# ──────────────────────────────────────────────────────────────────────────
+#: Circlize sector order: clockwise from 12 o'clock, following the network ring
+#: so the chord diagram reads in the same spatial order as the topology diagram.
+RING_ORDER = ["3", "6", "7", "8", "2", "9", "4", "1", "5"]
+
+#: Node-diagram rotation (deg): bus 3 at the bottom, bus 2 NW, bus 9 at top.
+ROTATION_DEG = 180
+
+#: Circlize center: bus 9 placed across 12 o'clock.
+CENTER_BUS = "9"
+
+#: Rotated bus coordinates for the network topology panel.
+COORDS = nodal_plot.rotate_coords(nodal_plot.IEEE9_COORDS, ROTATION_DEG)
+
+#: Canonical per-bus colors, assigned ONCE from the full fleet (which buses host
+#: gen/load) so every figure — unified, scenario, or per-footprint — uses the
+#: SAME color for a given bus. A subset clearing never restarts the palette.
+_sup_full: dict[str, list] = {}
+for _g, _s in DEFAULT_GEN_FLEET.items():
+    _sup_full.setdefault(_s["bus"], []).append(_s)
+BUS_COLORS = assign_bus_colors(BUSES, _sup_full, DEFAULT_LOADS)
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Network construction
+# ──────────────────────────────────────────────────────────────────────────
+def build_network(
+    line_ratings: LineValues | None = None, split_5_6: bool = False
+) -> pypsa.Network:
+    """Build the 9-bus PyPSA network, applying any line-rating overrides.
+
+    Parameters
+    ----------
+    line_ratings : dict, optional
+        ``{line: MW}`` overrides applied to ``s_nom`` (e.g. ``{'line_4': 40}``).
+        Applied AFTER any disaggregation, so a split circuit can still be re-rated.
+    split_5_6 : bool, optional
+        If True, the 5-6 interface ``line_2`` is modeled as a parallel DOUBLE
+        CIRCUIT — one circuit per balancing authority. ``line_2`` is disaggregated
+        by the standard PyPSA-Eur/Earth rule: N circuits each carry ``s_nom/N`` at
+        ``N·x`` (and ``N·r``), so the pair is electrically IDENTICAL to the single
+        line. Here N=2 → ``line_2_ba1`` + ``line_2_ba2``, each 75 MW at 2·x.
+        ``n.calculate_dependent_values()`` is then required so the fresh lines pick
+        up ``x_pu_eff`` (``compute_ptdf`` prefers it over raw ``x``; without it the
+        pair would NOT be equivalent). Default False (single ``line_2``).
+
+    Returns
+    -------
+    pypsa.Network
+    """
+    n = build_ieee9_network(periods=1)
+    if split_5_6:
+        x2, r2, s2 = (float(n.lines.loc["line_2", k]) for k in ("x", "r", "s_nom"))
+        b0, b1 = n.lines.loc["line_2", "bus0"], n.lines.loc["line_2", "bus1"]
+        n.remove("Line", "line_2")
+        n.add("Line", "line_2_ba1", bus0=b0, bus1=b1, x=2 * x2, r=2 * r2, s_nom=s2 / 2)
+        n.add("Line", "line_2_ba2", bus0=b0, bus1=b1, x=2 * x2, r=2 * r2, s_nom=s2 / 2)
+        n.calculate_dependent_values()   # recompute x_pu_eff → electrically identical to line_2
+    for ln, mw in (line_ratings or {}).items():
+        n.lines.loc[ln, "s_nom"] = float(mw)
+    return n
+
+
+def build_transport_network(
+    buses: Iterable[Bus], line_ratings: LineValues | None = None, x: float = 0.1
+) -> pypsa.Network:
+    """A tiny PyPSA network of ``buses`` joined in a chain by *transfer* lines.
+
+    The transport-layer abstraction for balancing authorities that are **not
+    electrically connected** and coordinate only through scheduling limits (e.g.
+    Markets+ BAAs): there is no physical grid here, just one "transfer line" per
+    consecutive bus pair, named ``transfer_<a>_<b>``, at reactance ``x`` and a
+    rating Ē taken from ``line_ratings`` (keyed by the line name, default very
+    large = slack). ``compute_ptdf`` + ``solve_engine_dispatch`` then clear it; on
+    the resulting 2-bus network the line carries the net interchange E and its
+    dual is the transfer shadow price μ_T. ``slack_bus`` must be one of ``buses``.
+
+    Parameters
+    ----------
+    buses : iterable
+        The transport nodes (e.g. the single-bus BAs of one market).
+    line_ratings : dict, optional
+        ``{transfer_line_name: Ē MW}`` scheduling limits; default 1e4 (slack).
+    """
+    import pypsa
+
+    buses = [str(b) for b in buses]
+    ratings = line_ratings or {}
+    n = pypsa.Network()
+    for b in buses:
+        n.add("Bus", b, v_nom=345.0)
+    for a, b in zip(buses[:-1], buses[1:]):
+        name = f"transfer_{a}_{b}"
+        n.add("Line", name, bus0=a, bus1=b, x=x, r=0.0,
+              s_nom=float(ratings.get(name, 1e4)))
+    n.calculate_dependent_values()
+    return n
+
+
+def shift_factors(
+    network: pypsa.Network | None = None, slack_bus: str = "1"
+) -> PTDFData:
+    """DC shift-factor matrix (PTDF) of the network (default: the base case)."""
+    if network is None:
+        network = build_network()
+    return compute_ptdf(network, slack_bus=slack_bus)
+
+
+def sf_table(pt: PTDFData) -> pd.DataFrame:
+    """Readable shift-factor table ``SF[line (a-b), bus]`` for display."""
+    return pd.DataFrame(
+        pt.ptdf,
+        index=[f"{l} ({a}-{b})" for l, (a, b) in zip(pt.lines, pt.line_buses)],
+        columns=[f"bus {b}" for b in pt.buses],
+    ).round(3)
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Market engine construction
+# ──────────────────────────────────────────────────────────────────────────
+def make_engine(
+    name: str,
+    buses: Iterable[Bus],
+    gen_fleet: Fleet | None = None,
+    loads: Loads | None = None,
+    activated: str | list[Line] = "all",
+) -> MarketEngine:
+    """A ``MarketEngine`` owning every fleet gen and load whose bus is in ``buses``.
+
+    Parameters
+    ----------
+    name : str
+        Engine label.
+    buses : iterable
+        The bus set this engine optimizes over.
+    gen_fleet, loads : dict, optional
+        Override the canonical fleet/loads (default ``DEFAULT_GEN_FLEET`` /
+        ``DEFAULT_LOADS``) — the visible-knob hook for a notebook EDIT cell.
+    activated : "all" | list[str]
+        The activated constraint set ℳ^M_act (lines this engine enforces limits on).
+    """
+    fleet = DEFAULT_GEN_FLEET if gen_fleet is None else gen_fleet
+    loads = DEFAULT_LOADS if loads is None else loads
+    buses = {str(b) for b in buses}
+    gens = {g: dict(s) for g, s in fleet.items() if str(s["bus"]) in buses}
+    # bus ids are strings everywhere in the engine; a load keyed by an int
+    # bus id is kept (str-cast) rather than silently dropped (2026-10-17)
+    own_loads = {str(b): mw for b, mw in loads.items() if str(b) in buses}
+    return MarketEngine(name=name, gens=gens, loads=own_loads, activated_lines=activated)
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# The Case object — this module packaged as an injectable scenario
+# ──────────────────────────────────────────────────────────────────────────
+class WSCC9Case:
+    """The 9-bus teaching case as a ``seams_engine.Case`` (the reference
+    implementation of that contract).
+
+    Nothing here is new: every attribute aliases a constant or function this
+    module already exposes, so the case and the module can never disagree.
+    Accessors return copies — a notebook that mutates ``case.gen_fleet`` (or an
+    engine built from it) must not corrupt the canonical numbers underneath.
+
+    ``build()`` returns a FRESH network each call and caches only the PTDF:
+    notebooks mutate networks and engines in place, so a shared Network object
+    would leak state between cells; the PTDF is a pure function of
+    (ratings, variant) and is safe to memoize.
+    """
+
+    name = "WSCC-9"
+    slack_bus = "1"
+    shed_price = 150.0
+    rotation_deg = ROTATION_DEG
+    center_bus = CENTER_BUS
+    #: {} — on the 9-bus case BA membership is a notebook knob (Footprints),
+    #: not a property of the network.
+    bus_to_area: dict[Bus, Area] = {}
+
+    def __init__(self) -> None:
+        self._pt_cache: dict[tuple[Any, ...], PTDFData] = {}
+
+    # -- the base scenario (copies; see class docstring) --------------------
+    @property
+    def gen_fleet(self) -> Fleet:
+        return {g: dict(s) for g, s in DEFAULT_GEN_FLEET.items()}
+
+    @property
+    def loads(self) -> Loads:
+        return dict(DEFAULT_LOADS)
+
+    # -- drawing layout -----------------------------------------------------
+    @property
+    def bus_colors(self) -> dict[Bus, str]:
+        return dict(BUS_COLORS)
+
+    @property
+    def coords(self) -> dict[Bus, tuple[float, float]]:
+        return dict(COORDS)
+
+    @property
+    def ring_order(self) -> list[Bus]:
+        return list(RING_ORDER)
+
+    # -- construction -------------------------------------------------------
+    def build(
+        self, line_ratings: LineValues | None = None, **variant: object
+    ) -> CaseNetwork:
+        """A fresh 9-bus network + (cached) PTDF as a ``CaseNetwork``.
+
+        ``variant`` forwards to :func:`build_network` (today: ``split_5_6``);
+        an unknown kwarg raises ``TypeError`` there, which is deliberate — a
+        different case must fail loudly on a variant it does not implement.
+        """
+        from seams_engine import CaseNetwork
+
+        n = build_network(line_ratings, **variant)  # type: ignore[arg-type]  # the Protocol's object, and build_network takes split_5_6 as a bool
+        key = (tuple(sorted((line_ratings or {}).items())),
+               tuple(sorted(variant.items())))
+        if key not in self._pt_cache:
+            self._pt_cache[key] = compute_ptdf(n, slack_bus=self.slack_bus)
+        return CaseNetwork(network=n, pt=self._pt_cache[key], fg=None)
+
+    def make_engine(
+        self,
+        name: str,
+        buses: Iterable[Bus],
+        gen_fleet: Fleet | None = None,
+        loads: Loads | None = None,
+        activated: str | list[Line] = "all",
+    ) -> MarketEngine:
+        return make_engine(name, buses, gen_fleet=gen_fleet, loads=loads,
+                           activated=activated)
+
+    def hub_kind(self) -> str:
+        return "auto"      # GAP where a footprint has generation, ELAP otherwise
+
+    def hub_weights(
+        self,
+        kind: str | None = None,
+        fp: Footprints | SimpleNamespace | None = None,
+        *,
+        loads: Loads | None = None,
+        gen_fleet: Fleet | None = None,
+    ) -> dict[Area, BusValues]:
+        """Ex-ante aggregation-point weights ``{area: {bus: w}}`` over the
+        areas of ``fp``.
+
+        The 9-bus case returns ``revenue_allocation.hub_weights`` on its own
+        loads and fleet, so the weights are the ones every caller computed
+        before 2026-10-21. ``kind`` defaults to :meth:`hub_kind`. BA
+        membership on this case is a notebook knob (``bus_to_area`` is
+        empty), so ``fp`` is required and a call without it raises
+        ``ValueError``.
+        """
+        import revenue_allocation as ra
+
+        if fp is None:
+            raise ValueError("the 9-bus case names no areas; pass the "
+                             "Footprints partition whose hubs are weighted")
+        return ra.hub_weights(fp, self.hub_kind() if kind is None else kind,  # type: ignore[arg-type]  # CaseProtocol admits a SimpleNamespace, and ra.hub_weights is hinted Footprints
+                              self.loads if loads is None else loads,
+                              self.gen_fleet if gen_fleet is None else gen_fleet)
+
+    # -- risk drivers: risk.load_dists/cost_dists resolve their spreads
+    #    through THESE case attributes; the 9-bus values stay documented in
+    #    risk.DEFAULT_LOAD_SD / DEFAULT_COST_SD (the canonical edit-once knobs)
+    #    and are mirrored here, so the case and the module can never disagree.
+    @property
+    def risk_load_sd(self) -> BusValues:
+        import risk
+
+        return dict(risk.DEFAULT_LOAD_SD)
+
+    @property
+    def risk_cost_sd(self) -> dict[Resource, float]:
+        import risk
+
+        return dict(risk.DEFAULT_COST_SD)
+
+    def drivers(
+        self, kinds: Collection[str] = ("load", "cost")
+    ) -> dict[tuple[str, ...], Normal | LogitNormal]:
+        """The case's canonical uncertain drivers as a ``{key: dist}`` mapping ready for
+        ``risk.monte_carlo`` / ``risk.gauss_hermite`` — per-bus loads and per-generator costs
+        on the 9-bus case (a bundle-backed case adds its per-BA factor structure here)."""
+        import risk
+
+        d: dict = {}
+        if "load" in kinds:
+            d.update(risk.load_dists())
+        if "cost" in kinds:
+            d.update(risk.cost_dists())
+        return d
+
+
+#: The singleton the shared libraries resolve through ``seams_engine.active()``.
+CASE = WSCC9Case()
+
+
+if __name__ == "__main__":
+    pt = shift_factors()
+    print("fleet:", {g: (s["bus"], s["cost"], s["p_nom"]) for g, s in DEFAULT_GEN_FLEET.items()})
+    print("loads:", DEFAULT_LOADS)
+    print("ring order:", RING_ORDER, "| rotation", ROTATION_DEG, "| center", CENTER_BUS)
+    print("bus colors:", BUS_COLORS)
+    print("\nshift factors (slack = bus 1):")
+    print(sf_table(pt))
+
+    # base single-line vs split double-circuit are electrically identical
+    pt1 = compute_ptdf(build_network(), slack_bus="1")
+    pt2 = compute_ptdf(build_network(split_5_6=True), slack_bus="1")
+    eng = make_engine("UNIFIED", buses=pt1.buses)
+    from seams_engine import solve_engine_dispatch
+    f1 = solve_engine_dispatch(pt1, eng).flow_own
+    eng2 = make_engine("UNIFIED", buses=pt2.buses)
+    r2 = solve_engine_dispatch(pt2, eng2)
+    # the split circuit's two halves should sum to the single line's flow
+    split = r2.flow_own["line_2_ba1"] + r2.flow_own["line_2_ba2"]
+    print(f"\nline_2 flow: single {f1['line_2']:.3f}  vs  split-sum {split:.3f}  "
+          f"(Δ {abs(f1['line_2'] - split):.5f} — should be ~0)")

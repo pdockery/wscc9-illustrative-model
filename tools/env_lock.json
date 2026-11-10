@@ -1,0 +1,22 @@
+{
+  "about": "The key package versions of the tested environment, read by tools/lab_env.py and tools/doctor.py. A model package moves a stored result when its version moves, and a tooling package moves a check. Each version equals its pin in constraints.txt, which pins every package: pip install -r requirements-dev.txt -c constraints.txt. The python field is the release the environment was tested under, recorded as information, because the repository admits Python 3.10 and later.",
+  "written": "2026-11-10",
+  "environment": "tested",
+  "python": "3.12.12",
+  "packages": {
+    "numpy": {"version": "2.3.5", "role": "model"},
+    "pandas": {"version": "2.3.3", "role": "model"},
+    "scipy": {"version": "1.16.3", "role": "model"},
+    "matplotlib": {"version": "3.10.8", "role": "model"},
+    "pypsa": {"version": "1.1.2", "role": "model"},
+    "pandapower": {"version": "3.4.0", "role": "model"},
+    "pycirclize": {"version": "1.10.1", "role": "model"},
+    "pytest": {"version": "9.0.2", "role": "tooling"},
+    "nbformat": {"version": "5.10.4", "role": "tooling"},
+    "nbconvert": {"version": "7.17.0", "role": "tooling"},
+    "ipykernel": {"version": "7.2.0", "role": "tooling"},
+    "ruff": {"version": "0.15.5", "role": "tooling"},
+    "mypy": {"version": "1.19.1", "role": "tooling"},
+    "pyyaml": {"version": "6.0.3", "role": "tooling"}
+  }
+}

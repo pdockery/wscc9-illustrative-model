@@ -1,0 +1,14 @@
+{
+ "_about": "Per-rule finding counts of prose_lint.py --all --json over the corpus (every notebook at the repository root, every .tex under notes/, sources/references.bib), frozen so that a change to a rule shows as a moved count. tests/test_prose_lint.py compares the current run with counts_by_severity. A rule change that moves a count records why in the changes list, with the date, the rule and the old and new counts. An edit to a notebook or a note also moves counts; the refresh after such an edit names the files edited. Refresh with: python .claude/skills/writing-voice/tests/test_prose_lint.py --refresh-golden",
+ "generated": "2026-11-07",
+ "command": "python .claude/skills/writing-voice/scripts/prose_lint.py --all --json",
+ "files": 0,
+ "seconds": 0.0,
+ "counts": {},
+ "counts_by_severity": {},
+ "changes": [
+  "2026-11-01 to 2026-11-03: the first freeze and its revisions, on a working corpus this repository does not carry.",
+  "2026-11-07: this repository's first freeze, over its root notebooks, every .tex under notes/ and sources/references.bib. The four notebooks were not yet written, so every count is 0 (files 0). CODE-SHED-PRICE applies to root notebooks with no intertie exemption; CANON-MARGIN-BETA applies to workshop2_congestion_management and sandbox. Refresh once the notebooks are written.",
+  "2026-11-07: CANON-WATER-NU and the path exemptions of CANON-INTERFACE-T and CANON-LINE-INDEX removed, because no notebook here sits on the paths they named; CANON-WATER-NU applied only on those paths, so no count moved."
+ ]
+}

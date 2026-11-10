@@ -1,0 +1,46 @@
+{
+  "caiso_spp_workshop_aug2026": {
+    "file": "2026-08-18_congestion_management_examples.pdf",
+    "source_url": "https://www.westernenergymarkets.com/documents/presentation-market-seams-workshop-aug-18-2026.pdf",
+    "source_pages": 113,
+    "excerpt_pages": [
+      91,
+      109
+    ],
+    "source_sha256": "6e35257a1324d4226708d1ff6c271615f87e7c9b03b2be5972d40b994a134ce7",
+    "excerpt_sha256": "7cf114f8738d40db37b3f01121eb5d28e9c1e394f14901fca297c5d31ec6a972",
+    "accessed": "2026-11-07",
+    "note": "Joint Market Seams Workshop No. 2, Western Electricity Coordinating Council, Salt Lake City, Utah, August 18, 2026; Paul Dockery's congestion management examples."
+  },
+  "caiso_spp_workshop_oct2026": {
+    "file": "2026-10-22_loading_relief_examples.pdf",
+    "source_url": "https://www.westernenergymarkets.com/documents/presentation-joint-market-seams-workshop-oct-22-2026.pdf",
+    "source_pages": 95,
+    "excerpt_pages": [
+      52,
+      86
+    ],
+    "source_sha256": "1afd62c2edc8f13a50dff4b57513258e47a2d8d7c9c76bc3e52a0ce08998b901",
+    "excerpt_sha256": "14747b0c098cb691a5d4ac2d908c56680673aa6a515cb1c709cdd7ac5d8632ce",
+    "accessed": "2026-11-07",
+    "note": "Joint Market Seams Workshop No. 4, Salt Lake City, October 22, 2026; Paul Dockery's Western Loading Relief process examples."
+  },
+  "caiso_spp_workshop_sep2026": {
+    "file": "2026-09-16_transactions_across_market_boundaries.pdf",
+    "source_url": "https://spp.org/documents/77788/joint%20market%20seams%20workshop%20slide%20decks%2020270916.zip",
+    "source_pages": 34,
+    "excerpt_pages": [
+      1,
+      34
+    ],
+    "source_sha256": "7c730b31f2e6a508419bc79d35fd67df045bc0c24003a021612ce0e35bea2d79",
+    "excerpt_sha256": "e0c7fd0cb879ed90218e8cf0a280cf615ea5c99c0810d5222ee7c0d6f5b3b3b0",
+    "accessed": "2026-11-07",
+    "note": "Joint Market Seams Workshop No. 3, Lakewood, Colorado, September 16, 2026; Paul Dockery's transactions across market boundaries examples. Link-only: the deck is a member of the SPP slide-deck zip at source_url.",
+    "redistribution": "link-only",
+    "posted_member": "Panel 3 First Deck Seams Workshop - Transactions across market boundaries examples - 2026 09 16.pptx",
+    "posted_member_sha256": "75f9f1a3dd9abada5a9314d82fb2ebb8a6a634cffa9b42338b5cf71720c91710",
+    "posted_member_slides": 35,
+    "source_note": "source_sha256 is the unposted PDF export marked \"ISO Internal\" on every page, which is not a posted file, and source_pages counts its 34 pages. posted_member_sha256 is the PPTX member of the SPP zip, fetched 2026-11-07, which has posted_member_slides slides and whose slide master and layout carry \"ISO Internal\". The posted PPTX opens with the panel's title slide, so page n of the PDF is slide n+1 of the PPTX. The local excerpt PDF stays untracked."
+  }
+}

@@ -1,0 +1,128 @@
+# ruff.toml: the code lint and the formatter for lib/, the tests and the harness.
+#
+# CODE_STYLE.md section 14 states the policy, and section 2 pins the mentor codebases.
+# The selected rules follow the mentors' own configurations (user decision 2026-11-02):
+#   PyPSA   d21e028 pyproject.toml lines 198-295 (the primary mentor, the fullest configuration)
+#   linopy  2ace7b3 pyproject.toml lines 182-235 (a subset of PyPSA's, from the same organisation)
+#   GridPath 508c00f runs Black only (pyproject.toml lines 208-211, .github/workflows/black.yml)
+#   EGRET   28c324f configures no linter and no formatter
+# A rule PyPSA selects is selected here unless a house rule conflicts with it (D401, following
+# linopy's ignore) or only PyPSA selects it and a house rule makes it redundant (EM, TRY003); each
+# departure is listed below with its reason. .claude/hooks/code_check.py runs this file after
+# every Write, Edit or MultiEdit of a .py file and reports the findings on the touched lines only,
+# so existing code is brought to the rules on touch (CODE_STYLE.md section 1).
+#
+# Selected families, with the mentor that selects each:
+#   F E W I D UP TID NPY                                 PyPSA and linopy
+#   PL PERF ANN ASYNC S B C4 G PIE T20 PYI PT SIM TC PTH TRY RUF013   PyPSA
+#   A001 A002 A004 A005 BLE001 PLW1514 PLW0177 RUF008 RUF009 RUF016 RUF017 RUF018 RUF021 RUF024
+#   RUF026 RUF027 PGH004 PGH005 T100      House additions: defect rules no mentor selects, kept from
+#                                         the 2026-11-02 morning configuration (A005 because lib/ is
+#                                         a flat sys.path; PLW1514 because the Windows code page
+#                                         cannot decode the canon's Greek letters)
+# Not selected, with the reason:
+#   EM, TRY003   PyPSA only; linopy, GridPath and EGRET raise with the message inline
+#   ERA          PyPSA selects the family and ignores its one rule, ERA001
+#   N            no mentor selects it; the canon's symbols are upper case in code (F, SF, R_T)
+#   ISC001       morning configuration; conflicts with ruff format, which now runs on new modules
+# Ignored, following PyPSA's ignore list (pyproject.toml lines 235-256): ANN401 E501 E741 D203
+#   D213 D400 D415 SIM105 SIM108 SIM118 PLR0911 PLR0912 PLR0913 PLR0915 PLR2004 PLW1641 PLW2901
+#   PT011. Ignored following linopy (pyproject.toml line 203): D401, because the house register
+#   opens a docstring with a declarative summary and never an imperative (CODE_STYLE.md 6.2).
+#
+# The drift baseline was measured 2026-11-02 with ruff 0.15.5. On 2026-11-07 `ruff check`
+# over tools/, .claude/hooks/ and tests/ found 150 findings and lib/ 736, so a whole-file run
+# exits 1. The findings are inherited, and lib/ is a byte copy. The gate is code_check.py's
+# report on the touched lines (CODE_STYLE.md 14.2).
+#
+# The formatter: `ruff format` at the default 88 characters and double quotes, as PyPSA and linopy
+# run it and as GridPath runs Black. It applies to a new module from its creation and to every
+# module off the [format] exclude list below, which holds the modules not yet formatted.
+# lib/ is the shared 9-bus library, copied in byte for byte (lib/MANIFEST.md
+# records each module's SHA-256 and the date of the copy), so a lib/ module leaves the list
+# when a copy brings it formatted. A tests/ module on the list is formatted in a change of its
+# own and leaves the list in the same change (CODE_STYLE.md 14.6). code_check.py runs
+# `ruff format --check --force-exclude` and reports a module off the list that is not
+# formatted.
+
+target-version = "py310"
+line-length = 88
+# The flat library and test folders, so that isort (I001) and TC read `import seams_engine` as
+# first-party, as tests/conftest.py places lib/ on sys.path.
+src = ["lib", "tests", ".claude/hooks"]
+extend-exclude = ["sources", "outputs", "sandbox_exhibits", ".ipynb_checkpoints", "*.ipynb"]
+
+[lint]
+# explicit-preview-rules: only the preview rules named below run (PLW1514, PLW0177, RUF027).
+preview = true
+explicit-preview-rules = true
+select = [
+    # PyPSA and linopy
+    "F", "E", "W", "I", "D", "UP", "TID", "NPY",
+    # PyPSA
+    "PL", "PERF", "ANN", "ASYNC", "S", "B", "C4", "G", "PIE", "T20", "PYI", "PT",
+    "SIM", "TC", "PTH", "TRY", "RUF013",
+    # House additions: defect rules with zero or near-zero hits
+    "A001", "A002", "A004", "A005", "BLE001", "PLW1514", "PLW0177",
+    "RUF008", "RUF009", "RUF016", "RUF017", "RUF018", "RUF021", "RUF024", "RUF026", "RUF027",
+    "PGH004", "PGH005", "T100",
+]
+ignore = [
+    # PyPSA's ignore list
+    "ANN401", "E501", "E741", "D203", "D213", "D400", "D415",
+    "SIM105", "SIM108", "SIM118",
+    "PLR0911", "PLR0912", "PLR0913", "PLR0915", "PLR2004", "PLW1641", "PLW2901", "PT011",
+    # linopy's: a declarative docstring summary
+    "D401",
+    # TRY003 goes with EM, which is not selected (see above)
+    "TRY003",
+]
+
+[lint.per-file-ignores]
+# PyPSA's test ignores (pyproject.toml lines 259-291).
+"**/tests/**" = ["D", "S", "B", "T20", "SIM", "PL", "TRY", "ANN"]
+# Hooks fail open and report on stdout; they run named tools with fixed argument lists and read
+# the return code instead of check=True (CODE_STYLE.md section 13).
+".claude/**" = ["BLE001", "T20", "S603", "S607", "PLW1510"]
+"tools/**" = ["BLE001", "T20", "S603", "S607", "PLW1510"]
+# The harness tests are standard-library unittest (CODE_STYLE.md 13.6), so the pytest style does not apply.
+".claude/**/tests/**" = ["PT"]
+"tools/tests/**" = ["PT"]
+
+[lint.flake8-tidy-imports]
+# PyPSA and linopy: no relative imports.
+ban-relative-imports = "all"
+
+[format]
+# The modules not yet formatted (see the header).
+exclude = [
+    "lib/atc.py",
+    "lib/bilateral.py",
+    "lib/etag.py",
+    "lib/footprints.py",
+    "lib/ieee9_network.py",
+    "lib/intertie.py",
+    "lib/nodal_plot.py",
+    "lib/risk.py",
+    "lib/seam_views.py",
+    "lib/seams_engine.py",
+    "lib/wscc9_figures.py",
+    "lib/wscc9_model.py",
+    "tests/conftest.py",
+    "tests/golden_runner.py",
+    "tests/test_case_contract.py",
+    "tests/test_constraint_set_args.py",
+    "tests/test_dc_links.py",
+    "tests/test_etag.py",
+    "tests/test_flowgates.py",
+    "tests/test_golden.py",
+    "tests/test_group_caps.py",
+    "tests/test_interface_vrl.py",
+    "tests/test_phase4_surfaces.py",
+    "tests/test_phase5_risk.py",
+    "tests/test_qp_dual_recovery.py",
+    "tests/test_rights_books.py",
+    "tests/test_shared_helpers.py",
+    "tests/test_structure.py",
+    "tests/test_wlr.py",
+]

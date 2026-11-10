@@ -1,0 +1,6 @@
+# Link-only sources: local copies stay untracked.
+academic-literature/
+institutional-context/spp_marketsplus_protocols2026.pdf
+# Link-only: the September workshop deck is marked "ISO Internal" and the agenda deck "SPP Internal Only" with speaker notes.
+workshops/2026-09-16_transactions_across_market_boundaries.pdf
+ferc-filings-and-iso-policy/caiso_spp_workshop_sep2026_agenda.pptx
