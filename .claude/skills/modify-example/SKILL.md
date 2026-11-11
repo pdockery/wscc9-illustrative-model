@@ -14,7 +14,7 @@ If `orientation` has not run in this session, say in one sentence that you are r
 
 The participant may have pasted only the starter, with no inputs, and may be new to the repository. Where an input is missing, interview the participant for it before reading anything, one question at a time, with the AskUserQuestion tool where it is available. Each question says in a sentence what the input is for and gives one example drawn from the repository. Where an input has a sensible default, offer the default and ask only for confirmation.
 
-1. **The notebook.** The example: "`101_sandbox.ipynb`".
+1. **The notebook.** The example: "`sandbox.ipynb`".
 2. **The change**, as one of four kinds: knob values (the example: "`line_4` at 30 MW in the August Example 1"); a new example in the sandbox (the example: "Market B also enforces `line_4`"); a code or markdown cell (the example: "print the redispatch ledger under the Example 2 figure"); a library change (the example: "move the October notebook's relief table into `atc.py`").
 3. **Whether stored results are replaced.** The default is no, and the change runs on a scratch copy under `sandbox_exhibits/`. The example: "yes, re-run in place after the change".
 
@@ -55,11 +55,11 @@ A deck notebook has a fixed form: the title cell, which names the deck, its date
 
 ## The pattern of an example
 
-1. **One constraint isolates one mechanism.** An example changes one thing against a case the reader already holds: the deck's own anchor, cross-checked against the canonical clearing (`line_4` at 40 MW on the teaching fleet, $R=\$804.1$/h, the signed $\mu_{\mathrm{line\_4}}=-\$20.10$/MWh, Example 1 of `101_sandbox.ipynb`). Where an example in the sandbox tests a claim, a markdown cell states the hypothesis and the reading rule before the run, and the result is read against that rule in one or two sentences after it. A result that surprises is reported as a finding.
+1. **One constraint isolates one mechanism.** An example changes one thing against a case the reader already holds: the deck's own anchor, cross-checked against the canonical clearing (`line_4` at 40 MW on the teaching fleet, $R=\$804.1$/h, the signed $\mu_{\mathrm{line\_4}}=-\$20.10$/MWh, Example 1 of `sandbox.ipynb`). Where an example in the sandbox tests a claim, a markdown cell states the hypothesis and the reading rule before the run, and the result is read against that rule in one or two sentences after it. A result that surprises is reported as a finding.
 2. **The first figure of every example is the interval's dispatch as the standard combined figure**, network panel and dispatch panel from the same result, drawn to the defaults in `figures.md`, with no suptitle, panel title or legend in a deck notebook.
 3. **The settlement is printed under the figure**: `settlement_by_bus` and `capacity_value_by_line`, whose totals both equal $R$, and for an allocation example the folded ledger with its conservation row visible. A ledger with raw components beats a derived metric.
 4. **The prose under the output reads the number and stops.**
-5. **The knobs are visible** in `# -- EDIT --` cells. A deck notebook ends in the sandbox section of its fixed form, and `101_sandbox.ipynb` reruns the whole chain on whatever the reader sets.
+5. **The knobs are visible** in `# -- EDIT --` cells. A deck notebook ends in the sandbox section of its fixed form, and `sandbox.ipynb` reruns the whole chain on whatever the reader sets.
 
 ## Reading and running
 

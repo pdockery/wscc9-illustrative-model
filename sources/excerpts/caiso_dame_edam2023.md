@@ -55,7 +55,7 @@ Used by: AGENTS.md, The Western context. Supports: Each balancing authority keep
 
 > For market area intertie resources at a scheduling point and transfer resources at a transfer location, the power transfer distribution factors to an intertie constraint or intertie scheduling limit at that scheduling point is +1 for an import and –1 for an export.
 
-Used by: 101_sandbox.ipynb. Supports: An import and an export at a scheduling point carry distribution factors of +1 and -1 on the intertie constraint. The PDF prints the second sign as an en dash.
+Used by: sandbox.ipynb. Supports: An import and an export at a scheduling point carry distribution factors of +1 and -1 on the intertie constraint. The PDF prints the second sign as an en dash.
 
 ## p. 186 (PDF p. 190)
 
@@ -63,7 +63,7 @@ Used by: 101_sandbox.ipynb. Supports: An import and an export at a scheduling po
 >
 > Rather than settling these revenues under the umbrella of congestion revenue using one settlement charge code, the CAISO will separate this revenue component as accrued transfer revenue and settle it independently from accrued congestion revenue.
 
-Used by: 101_sandbox.ipynb. Supports: Internal congestion revenue goes to the balancing authority that models the constraint, and transfer revenue is settled separately.
+Used by: sandbox.ipynb. Supports: Internal congestion revenue goes to the balancing authority that models the constraint, and transfer revenue is settled separately.
 
 ## p. 187 (PDF p. 191)
 
@@ -75,4 +75,4 @@ Used by: no notebook; kept for the explanation of the grounds for paying congest
 
 > The two EDAM entities that made the transmission available to facilitate the energy or capacity transfer generally will share the transfer revenue equally.
 
-Used by: 101_sandbox.ipynb. Supports: Transfer revenue is shared equally by the two entities that made the transmission available.
+Used by: sandbox.ipynb. Supports: Transfer revenue is shared equally by the two entities that made the transmission available.

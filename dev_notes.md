@@ -2,6 +2,18 @@
 
 The dated development log of this repository, newest first. Each entry is headed `## YYYY-MM-DD: <title>`, the form `.claude/hooks/session_brief.py` reads. An entry has five parts, in this order: what was done; what verified it, by command and counts; what is unverified; what is held; and the next step. A held decision carries an id `D-YYYYMMDD-n`, the date of the entry that raises it and its number in that entry, and it stays open until a later line puts "Decided" or "Closed" before the id. The form binds the maintainer and is recommended to contributors (participant decision 2026-11-10). Entries before 2026-11-10 keep their own form.
 
+## 2026-11-10: A simple fundamentals notebook, and the sandbox under its own name
+
+**What was done.** `101_fundamentals.ipynb` is new (owner direction 2026-11-10). It states the clearing in 5 equations and clears one market with no binding line, one market with line 6-7 at 40 MW, and the same market as two balancing authority areas, and its closing sandbox clears two markets independently on one network. Each example draws the network and nodal dispatch figure and prints the nodal prices, the binding lines' shadow prices, and the production cost and load payment by area or market. `NOTEBOOK_RECORD.md` section 1 holds its entry. The full sandbox moved from `101_sandbox.ipynb` to `sandbox.ipynb`, unchanged except its title cell, and `AGENTS.md`, `CANON.md`, `CODE_STYLE.md`, `README.md`, `prompts/01-orientation.md`, the skills, the excerpts' "Used by" lines, `prose_lint.py`'s margin rule and its tests, and the writing-voice corpus (rebuilt with `style_check.py --rebuild`) follow the new name. The name `101_fundamentals.ipynb` keeps to the banned-name sweep, which refuses a numbered name with two word segments.
+
+**What verified it.** Both notebooks executed with `tools/nb_execute.py`, with no error output, stamped at `febf7d4` with `lib_dirty` false. `prose_lint.py` on the new notebook: 0 errors, 0 warnings. A fresh review of the new notebook (method, conventions, voice), each fail or should-fix put to a refuter: five should-fix findings survived and were fixed (the EDAM price formula named with the lossless and unlimited-interface divergences, two docstring summaries, named golden tolerances, a restating sentence, the scope stated twice), four were refuted, and the notebook was re-executed. The public tools/check.py --full: harness 469 passed and 1 skipped, tests 226 passed, slides 60 passed.
+
+**What is unverified.** The new notebook has not been opened on Colab.
+
+**What is held.** Nothing is staged or committed. The three workshop notebooks keep their stamps of the previous library hash.
+
+**The next step.** The owner reviews `101_fundamentals.ipynb` and says whether to commit it with the rename of the sandbox.
+
 ## 2026-11-10: Grounding files for any agent tool, the canon at the root, and the harness documents
 
 **What was done.**

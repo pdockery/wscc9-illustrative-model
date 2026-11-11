@@ -10,7 +10,7 @@ read: 2026-11-07
 
 > Each regional system operator need monitor only its own constraints, but it does need to determine the flows in the network.
 
-Used by: 101_sandbox.ipynb, workshop2_congestion_management.ipynb, workshop3_transactions_across_boundaries.ipynb. Supports: Each operator monitors its own constraints and still needs the network flows, which is the premise of the two-engine clearing.
+Used by: sandbox.ipynb, workshop2_congestion_management.ipynb, workshop3_transactions_across_boundaries.ipynb. Supports: Each operator monitors its own constraints and still needs the network flows, which is the premise of the two-engine clearing.
 
 ## p. 21 (PDF p. 23)
 

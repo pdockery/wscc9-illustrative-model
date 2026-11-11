@@ -67,9 +67,21 @@ Entry dated 2026-11-07, revised 2026-11-08: the slide checks moved to `tests/tes
 
 **Stamp.** 75 cells, executed with `tools/nb_execute.py` at 2026-11-08T17:20:54Z. The stamp's `lib_commit` is `ce66306` with `lib_dirty` true, because `lib/` was copied in on 2026-11-07 after that commit, and its `lib_manifest.sha256` is `cec8c27c5df3f385824463c14c9804ce745299b0b3371c1afd2ae5180ade5e03`, the SHA-256 of `lib/MANIFEST.md`, which lists the 14 modules' hashes.
 
-### `101_sandbox.ipynb`
+### `101_fundamentals.ipynb`
 
-Entry dated 2026-11-07.
+Entry dated 2026-11-10 (owner direction 2026-11-10: a starting framework for understanding the market from the simplest market design, with the fewest formulas and variables, the network and nodal dispatch figure for each example, and no settlement ledger or congestion revenue allocation).
+
+**What it carries.** The 9-bus case cleared as a single-period, energy-only, lossless DC dispatch with offers at cost. The formulation has 5 numbered equations: the program with one power balance per area, the flow, the nodal price, each area's production cost and load payment, and the sum of two markets' flows. The nomenclature table has 14 rows. No deck is followed. The notebook has 7 figures: the configuration view, one figure per example, and three in the sandbox.
+
+**The examples.** Example 1 is one market at the case ratings: no line binds, every bus prices at \$35/MWh, the production cost is \$8,475/h and load pays \$11,025/h. Example 2 rates line 6-7 at 40 MW: $\mu=-\$20.10$/MWh, the production cost is \$8,941/h and load pays \$9,745.1/h, asserted against `tests/golden/golden.json` (`line4_unified`) with eq. (3) checked at every bus. Example 3 clears the same market as two balancing authority areas joined by an unlimited interface. Its dispatch and nodal prices are asserted equal to Example 2's. BA A carries the whole \$8,941/h of production cost and transfers 215 MW to BA B, BA A's load pays \$3,712.6/h and BA B's \$6,032.5/h.
+
+**The sandbox.** The EDIT cell has 6 knobs: `SB_RATINGS`, `SB_FLEET`, `SB_LOADS`, `MARKETS`, `ACTIVATED` and `MARKET_COLORS`. As stored, Market A and Market B clear independently, each enforcing its own lines. Market A binds line 6-7 at $-\$20.10$/MWh. The two markets' production costs are \$2,908.5/h and \$10,750/h, \$4,717.5/h above one market on the same knobs, and their summed flow on line 6-7 is 43.4 MW against its 40 MW rating.
+
+**Stamp.** 23 cells, executed with `tools/nb_execute.py` on 2026-11-10. The stamp's `lib_commit` is `febf7d4` with `lib_dirty` false, and its `lib_manifest.sha256` is `520d446bc3f9e3ab3641f710b0e97969d8bfa769a4225093d587a6392c1a308d`.
+
+### `sandbox.ipynb`
+
+Entry dated 2026-11-07. On 2026-11-10 it moved from `101_sandbox.ipynb` to `sandbox.ipynb`, unchanged except its title cell, when `101_fundamentals.ipynb` took the simple formulation (owner direction 2026-11-10). It was re-executed on 2026-11-10, its stamp's `lib_commit` `febf7d4` with `lib_dirty` false.
 
 **What it carries.** The 9-bus case cleared from one configuration cell, as one market (unified mode, the footprints being two balancing-authority areas) or as two independent markets (two-markets mode). It carries the engine, the settlement and allocation ledgers, an intertie scheduling limit and the loading relief, over one period, energy only, on a lossless DC network. No deck is followed. The formulation has 13 numbered equations.
 

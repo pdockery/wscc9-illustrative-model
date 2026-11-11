@@ -10,13 +10,13 @@ read: 2026-11-07
 
 > The marginal prices for the various commodities in EDAM are derived from the shadow prices of binding constraints.
 
-Used by: 101_sandbox.ipynb, workshop3_transactions_across_boundaries.ipynb. Supports: Prices come from the shadow prices of binding constraints, which is how a node outside a footprint is priced in Example 1.
+Used by: sandbox.ipynb, workshop3_transactions_across_boundaries.ipynb. Supports: Prices come from the shadow prices of binding constraints, which is how a node outside a footprint is priced in Example 1.
 
 ## p. 26 (PDF p. 28), section 10
 
 > Therefore, the marginal prices are derived as follows:
 
-Used by: 101_sandbox.ipynb, workshop2_congestion_management.ipynb, workshop3_transactions_across_boundaries.ipynb, workshop4_loading_relief.ipynb. Supports: The price formula that follows this sentence divides the energy price by the loss penalty factor and subtracts the shift-factor-weighted shadow prices of the binding network constraints. The formula is typeset as equations on PDF p. 28 and is read from the rendered page.
+Used by: 101_fundamentals.ipynb, sandbox.ipynb, workshop2_congestion_management.ipynb, workshop3_transactions_across_boundaries.ipynb, workshop4_loading_relief.ipynb. Supports: The price formula that follows this sentence divides the energy price by the loss penalty factor and subtracts the shift-factor-weighted shadow prices of the binding network constraints. The formula is typeset as equations on PDF p. 28 and is read from the rendered page.
 
 ## p. 10 (PDF p. 12), notation
 
@@ -30,7 +30,7 @@ Used by: no notebook; kept for the explanation of the shift factor of a resource
 >
 > The scheduling limit on a transfer indicates the amount of transfer capacity that is released in the EDAM for optimal scheduling.
 
-Used by: 101_sandbox.ipynb. Supports: Intertie scheduling limits sit in the same constraint index as network constraints, and a transfer limit is released capacity.
+Used by: sandbox.ipynb. Supports: Intertie scheduling limits sit in the same constraint index as network constraints, and a transfer limit is released capacity.
 
 ## p. 5 (PDF p. 7), section 3.1
 

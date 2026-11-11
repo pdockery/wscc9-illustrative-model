@@ -12,7 +12,7 @@ The hook acts only when the command used nbformat: the command text names nbform
 the candidate notebooks, which are the .ipynb files git reports as modified or untracked and the
 notebooks the command or the script names, and keeps those written within WINDOW seconds. A
 named notebook is found as given, against the command's working directory, and then against the
-repository root, where the deck notebooks and 101_sandbox.ipynb sit. The window covers the Bash
+repository root, where the deck notebooks, 101_fundamentals.ipynb and sandbox.ipynb sit. The window covers the Bash
 tool's longest foreground run. For each notebook (at most MAX_NOTEBOOKS, newest first), the
 changed cells are the cells whose source differs from HEAD, or every cell of a notebook HEAD
 lacks. Three checks run on the changed cells:

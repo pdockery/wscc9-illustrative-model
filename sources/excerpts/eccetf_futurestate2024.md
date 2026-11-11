@@ -12,7 +12,7 @@ read: 2026-11-07
 >
 > For example, an e-Tag with a calculated TDF of 8.3% on an element indicates 8.3% of the MW amount on that e-Tag will flow on element X.
 
-Used by: 101_sandbox.ipynb, workshop4_loading_relief.ipynb. Supports: Defines the generation-to-load distribution factor and shows how a transfer distribution factor sizes an e-Tag’s flow on an element.
+Used by: sandbox.ipynb, workshop4_loading_relief.ipynb. Supports: Defines the generation-to-load distribution factor and shows how a transfer distribution factor sizes an e-Tag’s flow on an element.
 
 ## p. 12
 
@@ -26,7 +26,7 @@ Used by: 101_sandbox.ipynb, workshop4_loading_relief.ipynb. Supports: Defines th
 >
 > BAs or market areas issued GTL relief obligations will need to redispatch their systems to achieve the relief obligation.
 
-Used by: 101_sandbox.ipynb, workshop4_loading_relief.ipynb. Supports: Curtailments walk the transmission priorities from non-firm to firm by bucket. A market area receives one net generation-to-load relief obligation, and the obligation is met by redispatch while tagged transfers are curtailed.
+Used by: sandbox.ipynb, workshop4_loading_relief.ipynb. Supports: Curtailments walk the transmission priorities from non-firm to firm by bucket. A market area receives one net generation-to-load relief obligation, and the obligation is met by redispatch while tagged transfers are curtailed.
 
 ## p. 13
 
@@ -40,7 +40,7 @@ Used by: workshop4_loading_relief.ipynb. Supports: Opens the worked bucket examp
 >
 > The firm e-Tag curtailments would be done on a pro rata basis calculated by the impact each e-Tag has on the constraint.
 
-Used by: 101_sandbox.ipynb, workshop4_loading_relief.ipynb. Supports: The worked example curtails from the lowest priority up, and the last bucket reached is cut pro rata by each e-Tag's impact on the constraint.
+Used by: sandbox.ipynb, workshop4_loading_relief.ipynb. Supports: The worked example curtails from the lowest priority up, and the last bucket reached is cut pro rata by each e-Tag's impact on the constraint.
 
 ## p. 15
 

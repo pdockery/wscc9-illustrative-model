@@ -301,7 +301,7 @@ class NotebookMarkdownRules(LintCase):
         # no notebook is exempt: a paper's models are named, not numbered
         self.assertHit(
             "XREF-EXTERNAL-EQ",
-            self.nb(md("The ramping limit is the paper's (6l)."), name="101_sandbox.ipynb"),
+            self.nb(md("The ramping limit is the paper's (6l)."), name="sandbox.ipynb"),
         )
         self.assertNoHit(
             "XREF-EXTERNAL-EQ", self.nb(md("The exhibit above is eq. (4) in numbers."))
@@ -351,7 +351,7 @@ class CanonRules(LintCase):
     def test_interface_t(self):
         text = md("The interface set $\\mathcal T$ is declared.")
         self.assertHit("CANON-INTERFACE-T", self.nb(text))
-        self.assertHit("CANON-INTERFACE-T", self.nb(text, name="101_sandbox.ipynb"))
+        self.assertHit("CANON-INTERFACE-T", self.nb(text, name="sandbox.ipynb"))
         self.assertNoHit(
             "CANON-INTERFACE-T", self.nb(md("The interface set $\\mathcal I$ is declared."))
         )
@@ -629,7 +629,7 @@ class NotebookCodeRules(LintCase):
 
     def test_shed_price(self):
         cell = code("SHED_PRICE = 300\n")
-        self.assertHit("CODE-SHED-PRICE", self.nb(cell, name="101_sandbox.ipynb"))
+        self.assertHit("CODE-SHED-PRICE", self.nb(cell, name="sandbox.ipynb"))
         self.assertHit("CODE-SHED-PRICE", self.nb(cell, name="222_x.ipynb"))
         self.assertNoHit(
             "CODE-SHED-PRICE", self.nb(cell, name="sandbox_exhibits/x/201_x.ipynb")

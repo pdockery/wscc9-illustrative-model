@@ -12,7 +12,7 @@ You are writing as the author of the document's declared voice, with its exempla
 
 | voice | for | exemplars | corpus the check reads |
 |---|---|---|---|
-| `notebook` | the markdown of a teaching notebook, and the records, skills and README of this repository | `exemplars/notebook.md` | the markdown cells of `101_sandbox.ipynb` |
+| `notebook` | the markdown of a teaching notebook, and the records, skills and README of this repository | `exemplars/notebook.md` | the markdown cells of `sandbox.ipynb` |
 | `chat` | a reply to the user in the chat | `register/notebook.md`, `register/td.md` | none; the notebook and TD register with Unicode math (section below) |
 
 Each exemplar file opens with an index of passages by document part (an opening, a definition, a result reading, a close). `register/<voice>.md` is a short characterization of that voice's exemplars, read with them and never instead of them. `register/td.md` and `exemplars/td.md` carry the technical description's register, which the notebook voice applies and the chat voice reads. `register/cut_on_sight.md` holds the cut-on-sight list and the sentence mechanics, which apply in every voice.
@@ -54,4 +54,4 @@ Prose is drafted from the exemplar passages and checked after drafting against t
 - `scripts/style_check.py`: the diagnostic; standard library only; `--json` for a machine-readable report.
 - `scripts/prose_lint.py`: the hard prose and notebook rules, run by the PostToolUse hook on every write and by hand in step 4; `--list-rules` names the rules it checks. `scripts/symbol_check.py` is the symbol module `prose_lint.py` loads. `style_check.py` stays a diagnostic that never sets a target.
 - `tests/test_prose_lint.py`: the lint's tests, with `scripts/prose_lint_golden.json` as the frozen per-rule counts.
-- `corpus_sources.json`, `corpus_stats.json`: the document the notebook bands are computed from, and the bands. The source is the markdown of `101_sandbox.ipynb`, and `style_check.py --rebuild` recomputes the bands from it. The exemplar passages stay verbatim from the nodal market fundamentals notebook of commit ce66306.
+- `corpus_sources.json`, `corpus_stats.json`: the document the notebook bands are computed from, and the bands. The source is the markdown of `sandbox.ipynb`, and `style_check.py --rebuild` recomputes the bands from it. The exemplar passages stay verbatim from the nodal market fundamentals notebook of commit ce66306.

@@ -12,7 +12,7 @@ read: 2026-11-07
 >
 > Transactions at intertie locations are modeled as imports or exports sourcing from aggregate physical generation in a neighboring balancing area
 
-Used by: 101_sandbox.ipynb, workshop3_transactions_across_boundaries.ipynb. Supports: The SP-Tie and GAP-Tie ways of representing an intertie schedule in the network model.
+Used by: sandbox.ipynb, workshop3_transactions_across_boundaries.ipynb. Supports: The SP-Tie and GAP-Tie ways of representing an intertie schedule in the network model.
 
 ## Slide 8 (PDF p. 8)
 

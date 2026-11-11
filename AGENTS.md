@@ -12,7 +12,7 @@ This file orients any agent working in this repository, whichever tool or model 
 
 ## What this repository holds
 
-The network is the WSCC/IEEE 9-bus test case (`anderson1977power`, `thurner2018pandapower`), cleared as a lossless DC dispatch with shift factors, with one market or two markets on one network. Each workshop deck has one notebook at the root, and each deck notebook follows its deck's slide sequence: `workshop2_congestion_management.ipynb` (August 18, 2026), `workshop3_transactions_across_boundaries.ipynb` (September 16, 2026) and `workshop4_loading_relief.ipynb` (October 22, 2026). `101_sandbox.ipynb` exposes the engine's configurable features in one EDIT cell, and its closing section lists the features it does not carry. `README.md` holds the workshop index, with each deck's excerpt and Colab badge.
+The network is the WSCC/IEEE 9-bus test case (`anderson1977power`, `thurner2018pandapower`), cleared as a lossless DC dispatch with shift factors, with one market or two markets on one network. Each workshop deck has one notebook at the root, and each deck notebook follows its deck's slide sequence: `workshop2_congestion_management.ipynb` (August 18, 2026), `workshop3_transactions_across_boundaries.ipynb` (September 16, 2026) and `workshop4_loading_relief.ipynb` (October 22, 2026). `101_fundamentals.ipynb` states the market's clearing at its simplest and clears it as one market, as two balancing authority areas within it, and in its closing sandbox as two markets on one network. `sandbox.ipynb` exposes the engine's configurable features in one EDIT cell, and its closing section lists the features it does not carry. `README.md` holds the workshop index, with each deck's excerpt and Colab badge.
 
 A deck notebook has a fixed form: the title cell, the nomenclature table, the formulation with numbered equations and `*In words.*` blurbs, the configuration with its `# -- EDIT --` knobs, then the examples in the deck's slide order. It closes with a sandbox section that reruns its chain on the values of its EDIT cell. A figure in a deck notebook carries no suptitle, no panel title and no legend, because the slide carries them, and it is drawn inline at the default inline dpi (user decision 2026-11-07). A deck notebook writes no file by default. The checks that its clears reproduce the slides' numbers live outside it, in `tests/test_slides_<deck>.py` through `tests/slide_check.py` (user decision 2026-11-08). A new example goes in the sandbox, so that each deck notebook stays on its deck.
 
@@ -29,7 +29,7 @@ An agent working here helps a person find and understand what the repository hol
    - **The sources.** Each entry of `sources/references.bib` carries a `url` and a `note` on its bearing, and a `file` where the document is tracked. Read `sources/excerpts/<key>.md` first, then the PDF where tracked, otherwise the url.
    - **The library.** `NOTEBOOK_RECORD.md` section 2 indexes the public functions module by module, and the module docstring of `lib/seams_engine.py` maps the code to the notation.
 3. Answer from what was found, citing the file and the cell, page or section. A number comes from a stored output with its provenance, never from memory. The provenance is the notebook's `lab_execution` metadata stamp or, for a notebook not yet stamped, its row in `tools/nb_staleness.py`.
-4. If the record does not address the question, say so, show the nearest material, and sketch which knobs of `101_sandbox.ipynb` could answer it. Nothing is built until the person asks.
+4. If the record does not address the question, say so, show the nearest material, and sketch which knobs of `sandbox.ipynb` could answer it. Nothing is built until the person asks.
 5. The open decisions are listed in the newest `dev_notes.md` entry that restates them, by `D-YYYYMMDD-n` id. They are read when a question touches them.
 
 ## The Western context
@@ -65,8 +65,8 @@ The functions conferred to the market (commitment, dispatch, and pricing) tend t
 | shed price $V$ | \$150/MWh | `SHED_PRICE` in the configuration cell of each root notebook | a notebook that adopts another value states it (`CANON.md` section 7) |
 | figure label rounding | two paths: a flow rounded to 0.1 MW and then to a whole MW, or directly to a whole MW | `combined_views` and `own_view` in `lib/seam_views.py` | held for the participant, D-20261107-7 |
 | slide tolerances | 0.5 MW on a whole-MW label, \$0.05/MWh on a price printed to \$0.1, and a floating-point slack of 1e-9 | `WHOLE_MW_ABS`, `TENTH_PRICE_ABS` and `ROW_SLACK_ABS` in `tests/slide_check.py` | 2026-11-08 |
-| Method 1's split of the rent on unassigned lines | half each, $s_a=0.5$ | `unassigned_split` of `allocate_congestion_rent` in `lib/revenue_allocation.py`; `UNASSIGNED_SPLIT` in `101_sandbox.ipynb` | 2026-11-06 (`NOTEBOOK_RECORD.md` section 4) |
-| Method 2's transfer-settlement share | half each, $\sigma_a=0.5$ | `TE_SPLIT` in `101_sandbox.ipynb` | `CANON.md` section 4 |
+| Method 1's split of the rent on unassigned lines | half each, $s_a=0.5$ | `unassigned_split` of `allocate_congestion_rent` in `lib/revenue_allocation.py`; `UNASSIGNED_SPLIT` in `sandbox.ipynb` | 2026-11-06 (`NOTEBOOK_RECORD.md` section 4) |
+| Method 2's transfer-settlement share | half each, $\sigma_a=0.5$ | `TE_SPLIT` in `sandbox.ipynb` | `CANON.md` section 4 |
 
 ## Notation
 

@@ -17,7 +17,7 @@ This page is for a person opening the repository for the first time. It says wha
 Read AGENTS.md at the root of this repository and follow it. Then tell me briefly what the repository holds, and ask which example I want explained, run or changed, or what question I have.
 ```
 
-Then answer in plain language. A short instruction is enough, and dictated speech is fine. You can ask what a deck example shows, ask the agent to find a number or a source, or bring a question of your own. When the record has not addressed your question, the agent says so, shows the nearest material, and sketches which knobs of `101_sandbox.ipynb` could answer it before building anything.
+Then answer in plain language. A short instruction is enough, and dictated speech is fine. You can ask what a deck example shows, ask the agent to find a number or a source, or bring a question of your own. When the record has not addressed your question, the agent says so, shows the nearest material, and sketches which knobs of `sandbox.ipynb` could answer it before building anything.
 
 Every number the agent cites comes from a source page or a notebook cell, and it says which. Where the record contradicts something in your request, it says so and says what the record supports. You can reaffirm your direction, and the work proceeds with the disagreement recorded.
 

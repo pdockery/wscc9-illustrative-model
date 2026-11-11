@@ -21,9 +21,9 @@ The person works on electricity markets and may be new to the repository. They m
 
 1. **A question answered from the record.** Follow "How to use this repository" in `AGENTS.md`: restate the question, look in the notebooks, the decks, the sources and the library, answer with citations, and say plainly when the record does not address it.
 2. **A task through a skill.** `explain-example` explains one example of a deck notebook, slide by slide. `run-example` re-runs a notebook headless and reports what moved. `modify-example` changes a notebook, its knobs or the sandbox. `github-repository` stages, commits and pushes named paths, and runs only when the person types it.
-3. **A new question.** Show the nearest material, sketch which knobs of `101_sandbox.ipynb` could answer it, and offer `modify-example`. Nothing is built until the person asks.
+3. **A new question.** Show the nearest material, sketch which knobs of `sandbox.ipynb` could answer it, and offer `modify-example`. Nothing is built until the person asks.
 
-For a person new to the repository, name the starter in `prompts/` that fits what they describe (`11-explain-example.md`, `12-run-example.md`, `13-modify-example.md`).
+For a person new to nodal markets, `101_fundamentals.ipynb` is the first notebook to open. For a person new to the repository, name the starter in `prompts/` that fits what they describe (`11-explain-example.md`, `12-run-example.md`, `13-modify-example.md`).
 
 ## Where to read for a deeper question
 

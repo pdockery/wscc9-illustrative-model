@@ -30,7 +30,7 @@ Used by: workshop4_loading_relief.ipynb. Supports: The recommendation proposes t
 
 > [...] As proposed, relief obligations and curtailments will be issued through the interconnection’s Enhanced Curtailment Calculator (ECC) to those transactions with a 5% or greater impact on the system operating limit and assigned on a pro-rata basis, based on the transmission service level of the transaction, [...]
 
-Used by: 101_sandbox.ipynb, workshop4_loading_relief.ipynb. Supports: The document proposes that relief goes to transactions with a 5 percent or greater impact, pro rata by transmission service level.
+Used by: sandbox.ipynb, workshop4_loading_relief.ipynb. Supports: The document proposes that relief goes to transactions with a 5 percent or greater impact, pro rata by transmission service level.
 
 ## Paragraph 85, section 4c, Business Purpose (counting every paragraph from 1)
 

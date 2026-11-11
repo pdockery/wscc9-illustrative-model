@@ -153,7 +153,7 @@ Rule = namedtuple("Rule", "id severity kinds scope hook source message")
 # kinds: nbmd notebook markdown, nbcode notebook code, nb whole notebook, tex, md, bib
 # scope: line, cell or file. A file-scope finding is reported in the hook only for a Write.
 # the public notebooks that carry the reservation margin psi
-MARGIN_NB = r"(^|/)(workshop2_congestion_management|101_sandbox)\.ipynb$"
+MARGIN_NB = r"(^|/)(workshop2_congestion_management|sandbox)\.ipynb$"
 RULE_DOCS = r"^(\.claude/|notes/writing_profile/|CLAUDE\.md$)"  # files that state the rules quote the phrases
 _R = [
     # notebook math and structure

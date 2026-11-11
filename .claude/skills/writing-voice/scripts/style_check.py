@@ -627,7 +627,7 @@ def main() -> int:
         "--rebuild",
         action="store_true",
         help="recompute corpus_stats.json from the documents in corpus_sources.json; "
-        "the notebook corpus is the markdown of 101_sandbox.ipynb",
+        "the notebook corpus is the markdown of sandbox.ipynb",
     )
     a = ap.parse_args()
     if a.rebuild:

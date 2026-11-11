@@ -20,4 +20,4 @@ Used by: no notebook; kept for the explanation of the area that receives a const
 >
 > The congestion distribution factors for the intertie scheduling limit (ISL or ITC) [...] are set to 100% for the BAA that manages the limit.
 
-Used by: 101_sandbox.ipynb. Supports: The split of rent on an ETSR is 50/50 between the two areas, and the intertie scheduling limit pays the area that manages it.
+Used by: sandbox.ipynb. Supports: The split of rent on an ETSR is 50/50 between the two areas, and the intertie scheduling limit pays the area that manages it.

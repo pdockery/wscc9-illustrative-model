@@ -284,9 +284,9 @@ The rules of this section are the repository's own. PyPSA strips notebook output
 
 12.1. The first code cell is the `#@title ▶ Run me first` setup cell, which installs the Colab packages and fetches the 14 modules of `lib/`. The four root notebooks place it at cell 1, after the title cell.
 
-12.2. A notebook's knobs sit in EDIT cells, each a fenced block of `UPPER_CASE` assignments marked `# -- EDIT --`, with a unit or meaning comment on each line, followed by the code that uses them. Exemplar: `workshop2_congestion_management.ipynb` cell 7 and `101_sandbox.ipynb` cell 11.
+12.2. A notebook's knobs sit in EDIT cells, each a fenced block of `UPPER_CASE` assignments marked `# -- EDIT --`, with a unit or meaning comment on each line, followed by the code that uses them. Exemplar: `workshop2_congestion_management.ipynb` cell 7 and `sandbox.ipynb` cell 11.
 
-12.3. An export path is resolved from the repository, never from the working directory, and a scratch export goes to `outputs/` or `sandbox_exhibits/`, both ignored. Exemplar: `101_sandbox.ipynb` cells 1 and 2.
+12.3. An export path is resolved from the repository, never from the working directory, and a scratch export goes to `outputs/` or `sandbox_exhibits/`, both ignored. Exemplar: `sandbox.ipynb` cells 1 and 2.
 
 12.4. A notebook is edited by cell, with `NotebookEdit` or `nbformat`, and executed headless with `tools/nb_execute.py`, which runs `python -m nbconvert --to notebook --execute --inplace` and stamps the library state into the notebook's metadata. `MPLBACKEND=Agg` is never set.
 
