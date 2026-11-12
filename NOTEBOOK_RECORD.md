@@ -81,7 +81,7 @@ Entry dated 2026-11-10 (owner direction 2026-11-10: a starting framework for und
 
 ### `sandbox.ipynb`
 
-Entry dated 2026-11-07. On 2026-11-10 it moved from `101_sandbox.ipynb` to `sandbox.ipynb`, unchanged except its title cell, when `101_fundamentals.ipynb` took the simple formulation (owner direction 2026-11-10). It was re-executed on 2026-11-10, its stamp's `lib_commit` `febf7d4` with `lib_dirty` false.
+Entry dated 2026-11-07. On 2026-11-10 it moved from 101_sandbox.ipynb, its former name, to `sandbox.ipynb`, unchanged except its title cell, when `101_fundamentals.ipynb` took the simple formulation (owner direction 2026-11-10). It was re-executed on 2026-11-10, its stamp's `lib_commit` `febf7d4` with `lib_dirty` false.
 
 **What it carries.** The 9-bus case cleared from one configuration cell, as one market (unified mode, the footprints being two balancing-authority areas) or as two independent markets (two-markets mode). It carries the engine, the settlement and allocation ledgers, an intertie scheduling limit and the loading relief, over one period, energy only, on a lossless DC network. No deck is followed. The formulation has 13 numbered equations.
 
