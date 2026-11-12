@@ -2,6 +2,18 @@
 
 The dated development log of this repository, newest first. Each entry is headed `## YYYY-MM-DD: <title>`, the form `.claude/hooks/session_brief.py` reads. An entry has five parts, in this order: what was done; what verified it, by command and counts; what is unverified; what is held; and the next step. A held decision carries an id `D-YYYYMMDD-n`, the date of the entry that raises it and its number in that entry, and it stays open until a later line puts "Decided" or "Closed" before the id. The form binds the maintainer and is recommended to contributors (participant decision 2026-11-10). Entries before 2026-11-10 keep their own form.
 
+## 2026-11-11: The workshop notebooks restamped at the current library
+
+**What was done.** `workshop2_congestion_management.ipynb`, `workshop3_transactions_across_boundaries.ipynb` and `workshop4_loading_relief.ipynb` were re-executed with `tools/nb_execute.py` against the library of `febf7d4`, whose change from their earlier stamp is docstring wording only (owner direction 2026-11-11). `NOTEBOOK_RECORD.md` section 1 records each new stamp.
+
+**What verified it.** Each stamp's `lib_commit` is `eb48135` with `lib_dirty` false. A comparison of each notebook's text outputs and figures before and after the run found 110, 84 and 167 text outputs and 14, 17 and 34 figures in both, no error output, and one difference, a pandas Styler object's memory address in the transactions notebook. `pytest tests -m slides`: 60 passed.
+
+**What is unverified.** Nothing further.
+
+**What is held.** Nothing.
+
+**The next step.** None for the restamp.
+
 ## 2026-11-10: A simple fundamentals notebook, and the sandbox under its own name
 
 **What was done.** `101_fundamentals.ipynb` is new (owner direction 2026-11-10). It states the clearing in 5 equations and clears one market with no binding line, one market with line 6-7 at 40 MW, and the same market as two balancing authority areas, and its closing sandbox clears two markets independently on one network. Each example draws the network and nodal dispatch figure and prints the nodal prices, the binding lines' shadow prices, and the production cost and load payment by area or market. `NOTEBOOK_RECORD.md` section 1 holds its entry. The full sandbox moved from `101_sandbox.ipynb` to `sandbox.ipynb`, unchanged except its title cell, and `AGENTS.md`, `CANON.md`, `CODE_STYLE.md`, `README.md`, `prompts/01-orientation.md`, the skills, the excerpts' "Used by" lines, `prose_lint.py`'s margin rule and its tests, and the writing-voice corpus (rebuilt with `style_check.py --rebuild`) follow the new name. The name `101_fundamentals.ipynb` keeps to the banned-name sweep, which refuses a numbered name with two word segments.
