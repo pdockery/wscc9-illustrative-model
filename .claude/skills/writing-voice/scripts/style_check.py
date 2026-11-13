@@ -311,6 +311,18 @@ TELLS = [
         r"^(This|That|It|These|They) (does|do|did) not (mean|imply|suggest|say)\b|\b(it|this|that)(?: is|['’]s| was) not (?:just |only |merely |simply )?[^,.;]{1,60}[,;] (?:it|this|that)(?: is|['’]s| was)\b|, no [a-z]+( [a-z]+)?\.$",
     ),
     (
+        "negation corrected in the same sentence (any subject)",
+        r"\b(?:is|are|was|were)(?:n['’]t| not) (?:just |only |merely |simply |about |really )?[^,.;:]{1,60}[,;] (?:it|this|that|they|the \w+)(?: is|['’]s| are|['’]re| was| were)\b",
+    ),
+    (
+        "preemptive negation",
+        r"\b(?:and|but) none of (?:them|these|those)\b|\bI (?:have not|haven['’]t|did not|didn['’]t) (?:yet )?(?:edit|change|touch|run|commit|push)\w*|\bnothing (?:else )?(?:has been|was|is|is being) (?:run|changed|edited|committed|pushed)\b",
+    ),
+    (
+        "not X but Y, without the comma",
+        r"\b(?:is|are|was|were)(?:n['’]t| not)\b(?! only| just| merely| simply)[^,.;:]{1,40}\bbut (?:rather |instead )?(?:a|an|the|about|in|on|for|to)\b",
+    ),
+    (
         "restating closer",
         r"\b(that is the real|that distinction matters|read that again|let that sink in|the message was clear|it was a lesson in|(this|that) (shows|illustrates|demonstrates|underscores) the importance of|that is the (point|key|takeaway)|the (lesson|takeaway) is)\b",
     ),
@@ -418,6 +430,25 @@ def find_tells(sents: list[str]) -> list[tuple[str, str]]:
     return hits
 
 
+#: The two-sentence form of the empty contrast, "It isn't X. It's Y.": a short copular negation
+#: whose next sentence restates its subject affirmatively.
+PAIR_TELL = "negation then correction across two sentences"
+_PAIR_NEG = re.compile(
+    r"^(?:It|This|That|They|These|Those|The \w+)(?: is|['’]s| are|['’]re| was| were)?"
+    r"(?: not|n['’]t)\b|^(?:It|This|That|They|These|Those|The \w+) (?:isn['’]t|aren['’]t|wasn['’]t)\b"
+)
+_PAIR_FIX = re.compile(r"^(?:It|This|That|They|These|Those)(?: is|['’]s| are|['’]re| was| were)\b")
+
+
+def pair_tells(sents: list[str]) -> list[tuple[str, str]]:
+    """The empty contrast split over two adjacent sentences, each pair returned as one hit."""
+    hits = []
+    for a, b in zip(sents, sents[1:]):
+        if len(a.split()) <= 14 and len(b.split()) <= 20 and _PAIR_NEG.search(a) and _PAIR_FIX.search(b):
+            hits.append((PAIR_TELL, f"{a} {b}"))
+    return hits
+
+
 def paragraph_openers(paras: list[str]) -> list[str]:
     """First sentences under nine words, the aphoristic-opener shape."""
     out = []
@@ -521,7 +552,7 @@ def report(path: Path, voice: str, as_json: bool = False) -> int:
         flags += bool(out)
         rows.append((k, v, d["p50"], d["p10"], d["p90"], out))
     fw_delta = delta(fwv, S["function_words"])
-    tells, voice_review, _exempt = voice_filter(voice, find_tells(sents))
+    tells, voice_review, _exempt = voice_filter(voice, find_tells(sents) + pair_tells(sents))
     openers = paragraph_openers(paras)
     if as_json:
         print(

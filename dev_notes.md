@@ -2,6 +2,37 @@
 
 The dated development log of this repository, newest first. Each entry is headed `## YYYY-MM-DD: <title>`, the form `.claude/hooks/session_brief.py` reads. An entry has five parts, in this order: what was done; what verified it, by command and counts; what is unverified; what is held; and the next step. A held decision carries an id `D-YYYYMMDD-n`, the date of the entry that raises it and its number in that entry, and it stays open until a later line puts "Decided" or "Closed" before the id. The form binds the maintainer and is recommended to contributors (participant decision 2026-11-10). Entries before 2026-11-10 keep their own form.
 
+## 2026-11-12: The chat exemplars approved, and two chat rules from the review
+
+**What was done.**
+- `.claude/skills/writing-voice/exemplars/chat.md` holds ten replies in the TD voice, CH-01 to CH-10, edited one by one by the owner and approved on 2026-11-12. CH-01 reads the nodal price at bus 7 as the change in production cost to serve one more MW of load, through the redispatch that holds line 6-7 at its rating and the shift-factor differences that set it, the price walk of slide 7 in `workshop2_congestion_management.ipynb`.
+- The output style quotes CH-01 and CH-10 under "Replies in the register" and points to `exemplars/chat.md`, and the writing-voice `SKILL.md` chat row and `CLAUDE.md` point to it.
+- Two rules from the owner's review. A question that asks what the writer should do ("Should I hold?") is cut from the chat, and a question whether to proceed stays. A preemptive negation, a clause that denies what no reader asserted ("and none of them blocks a reply"), is cut from the chat and from writing. They are in the output style, `register/cut_on_sight.md`, `style_check.py` (the tell "preemptive negation"), `prose_lint.py` (`CUT-PREEMPTIVE-NEG`, a warning) and `chat_voice.py` (the rule "chat permission question").
+
+**What verified it.** `pytest tools/tests .claude/skills/writing-voice/tests .claude/hooks/tests`: 489 passed and 1 skipped (the exemplar notebook kept in commit `ce66306`). The golden counts of `prose_lint.py` held, so the root notebooks carry no preemptive negation the rule finds.
+
+**What is unverified.** The revised output style loads at the next session start.
+
+**What is held.** The commit of this work waits on the owner.
+
+**The next step.** After some sessions, read the `voice` counts in the session brief.
+
+## 2026-11-12: The chat voice, as an output style, a logging Stop hook and a contrast rule
+
+**What was done.** The owner asked that an agent entering the repository avoid the rhetorical tells of machine prose in the chat as well as in documents, and that chat replies take the voice of the EDAM technical description, with the math guidance carried in the harness (2026-11-12).
+- `.claude/output-styles/edam-technical-description.md`, selected by `outputStyle` in `.claude/settings.json`, puts the TD register, the Unicode math rule, the eight marks of machine prose as instructions, and two example replies into the system prompt of every turn. It reaches the main conversation and a fork, and a sub-agent does not receive it.
+- `AGENTS.md`, "Working rules", gains the chat rule for agents in any tool; `CLAUDE.md`, the `writing-voice` skill's chat row and section, and `register/cut_on_sight.md` follow.
+- `.claude/hooks/chat_voice.py` (`Stop`) runs `style_check.py`'s tells, the two-sentence contrast, drama addressed to the reader, an em dash and LaTeX math on each reply, and logs each hit with kind `voice` to `.claude/logs/hooks.jsonl`. It never blocks, because a reply streams before a Stop hook runs.
+- `style_check.py` gains the negation corrected in the same sentence with any subject, "not X but Y" without the comma, and `pair_tells` for "It isn't X. It's Y."; `prose_lint.py` gains `CUT-NEG-CONTRAST` (warning, on every write), which skips a negated auxiliary verb ("did not engage X, but Y").
+
+**What verified it.** `pytest .claude/skills/writing-voice/tests`: 73 passed and 1 skipped (the exemplar notebook kept in commit `ce66306`). `python -m unittest discover -s .claude/hooks/tests`: OK, with `test_chat_voice.py`. `tools/tests/test_instruction_integrity.py`: 11 passed. `prose_lint.py` on the five root notebooks: 0 findings, `CUT-NEG-CONTRAST` among them.
+
+**What is unverified.** The output style and the hook load at the next session start.
+
+**What is held.** Chat exemplars drawn from replies the owner approved or edited.
+
+**The next step.** After some sessions, read the `voice` counts in the session brief.
+
 ## 2026-11-11: The workshop notebooks restamped at the current library
 
 **What was done.** `workshop2_congestion_management.ipynb`, `workshop3_transactions_across_boundaries.ipynb` and `workshop4_loading_relief.ipynb` were re-executed with `tools/nb_execute.py` against the library of `febf7d4`, whose change from their earlier stamp is docstring wording only (owner direction 2026-11-11). `NOTEBOOK_RECORD.md` section 1 records each new stamp.

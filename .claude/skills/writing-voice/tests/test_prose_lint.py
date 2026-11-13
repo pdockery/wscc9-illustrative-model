@@ -461,6 +461,47 @@ class LexiconRules(LintCase):
             self.nb(md('Hogan writes that "most importantly, the rent is collected".')),
         )
 
+    def test_preemptive_neg(self):
+        self.assertHit(
+            "CUT-PREEMPTIVE-NEG",
+            self.nb(md("The guide checks in three places, and none of them blocks a write.")),
+        )
+        self.assertHit("CUT-PREEMPTIVE-NEG", self.nb(md("Nothing has been run for this case.")))
+        self.assertNoHit(
+            "CUT-PREEMPTIVE-NEG",
+            self.nb(md("Each check reports what it finds, and line 5-6 does not bind.")),
+        )
+
+    def test_neg_contrast(self):
+        self.assertHit(
+            "CUT-NEG-CONTRAST",
+            self.nb(md("It is not a price signal, it is a cost allocation.")),
+        )
+        self.assertHit(
+            "CUT-NEG-CONTRAST",
+            self.nb(md("The rule isn't about prices; it's about who pays the rent.")),
+        )
+        self.assertHit(
+            "CUT-NEG-CONTRAST",
+            self.nb(md("The rent isn't a windfall. It's a payment for the right.")),
+        )
+        self.assertNoHit(
+            "CUT-NEG-CONTRAST",
+            self.nb(md("Line 6-7 binds at 40 MW, and line 5-6 does not bind.")),
+        )
+        self.assertNoHit(
+            "CUT-NEG-CONTRAST",
+            self.nb(md("The line does not bind in Example 1. Its flow is 63.2 MW.")),
+        )
+        self.assertHit(
+            "CUT-NEG-CONTRAST",
+            self.nb(md("The chain is not the rent paying for lines, but the eligibility test.")),
+        )
+        self.assertNoHit(
+            "CUT-NEG-CONTRAST",
+            self.nb(md("The comments did not engage the design concepts, but one concept meets them.")),
+        )
+
     def test_reader_address(self):
         self.assertHit(
             "CUT-READER-ADDRESS", self.nb(md("Notice that the price separates."))

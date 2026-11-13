@@ -115,6 +115,11 @@ def sibling(name: str) -> ModuleType | None:
 TELL_NAMES = {
     "CUT-PHRASES": ["intensifiers and evaluation", "meta-commentary on the document"],
     "CUT-READER-ADDRESS": ["reader address"],
+    "CUT-NEG-CONTRAST": [
+        "flipped or split negative contrast",
+        "negation corrected in the same sentence (any subject)",
+    ],
+    "CUT-PREEMPTIVE-NEG": ["preemptive negation"],
     "LEX-NETWORK-METAPHOR": ["metaphor for the network"],
     "LEX-TRANSMISSION-OWNER": ["generic transmission owner"],
 }
@@ -146,6 +151,34 @@ def tell_patterns(rule_id: str) -> list[re.Pattern[str]]:
                     )
         _TELL_RX[rule_id] = out
     return _TELL_RX[rule_id]
+
+
+
+#: "not only ... but" and "not X, but Y". The lint's form skips a negated auxiliary verb ("did not
+#: engage the concepts, but one of them delivers ..."), where both sides are actions the sentence
+#: defines; style_check's negative-parallelism tell keeps the wider form for review.
+NEG_PARALLEL = re.compile(
+    r"\bnot (?:only|just|merely|simply)\b.*\bbut\b|\b([A-Za-z']+) not\b[^,.;]{1,40}, but\b", re.I
+)
+NEG_AUX = {
+    "do", "does", "did", "can", "could", "will", "would", "shall", "should", "may", "might",
+    "must", "has", "have", "had", "need", "dare",
+}
+
+
+def neg_parallel(prose: str) -> bool:
+    """True where the line holds "not only ... but" or "not X, but Y" outside a negated auxiliary."""
+    return any(
+        m.group(1) is None or m.group(1).lower() not in NEG_AUX for m in NEG_PARALLEL.finditer(prose)
+    )
+
+
+def neg_contrast_pair(prose: str) -> bool:
+    """True where style_check.pair_tells finds the two-sentence empty contrast in the line."""
+    sc = sibling("style_check")
+    if sc is None or not hasattr(sc, "pair_tells"):
+        return False
+    return bool(sc.pair_tells(sc.sentences(prose)))
 
 
 # ------------------------------------------------------------------ the rule registry ----
@@ -385,6 +418,24 @@ _R = [
         "Cut the intensifier, the evaluation or the meta-commentary; state the fact.",
     ),
     (
+        "CUT-NEG-CONTRAST",
+        "warning",
+        "nbmd,tex,md",
+        "line",
+        True,
+        "writing-voice register/cut_on_sight.md (the empty contrast); style_check TELLS and pair_tells",
+        "State what the thing is; a contrast stays only where both sides are defined and it carries its own claim.",
+    ),
+    (
+        "CUT-PREEMPTIVE-NEG",
+        "warning",
+        "nbmd,tex,md",
+        "line",
+        True,
+        "writing-voice register/cut_on_sight.md (the preemptive negation); style_check TELLS",
+        "State the positive fact; a negative denies a belief someone holds.",
+    ),
+    (
         "CUT-READER-ADDRESS",
         "warning",
         "nbmd,tex",
@@ -594,6 +645,8 @@ RULES = {
 PATH_EXEMPT = {
     "CUT-PHRASES": [RULE_DOCS],
     "CUT-READER-ADDRESS": [RULE_DOCS],
+    "CUT-NEG-CONTRAST": [RULE_DOCS],
+    "CUT-PREEMPTIVE-NEG": [RULE_DOCS],
     "LEX-NETWORK-METAPHOR": [RULE_DOCS],
     "LEX-TRANSMISSION-OWNER": [RULE_DOCS],
     "LEX-BALANCING-AREA": [RULE_DOCS],
@@ -853,6 +906,16 @@ def prose_rules(
         rx.search(prose) for rx in tell_patterns("CUT-READER-ADDRESS")
     ):
         add("CUT-READER-ADDRESS")
+    if on("CUT-NEG-CONTRAST") and (
+        any(rx.search(prose) for rx in tell_patterns("CUT-NEG-CONTRAST"))
+        or neg_parallel(prose)
+        or neg_contrast_pair(prose)
+    ):
+        add("CUT-NEG-CONTRAST")
+    if on("CUT-PREEMPTIVE-NEG") and any(
+        rx.search(prose) for rx in tell_patterns("CUT-PREEMPTIVE-NEG")
+    ):
+        add("CUT-PREEMPTIVE-NEG")
     if on("LEX-NETWORK-METAPHOR") and any(
         rx.search(prose) for rx in tell_patterns("LEX-NETWORK-METAPHOR")
     ):

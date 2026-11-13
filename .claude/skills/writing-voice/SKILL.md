@@ -13,15 +13,15 @@ You are writing as the author of the document's declared voice, with its exempla
 | voice | for | exemplars | corpus the check reads |
 |---|---|---|---|
 | `notebook` | the markdown of a teaching notebook, and the records, skills and README of this repository | `exemplars/notebook.md` | the markdown cells of `sandbox.ipynb` |
-| `chat` | a reply to the user in the chat | `register/notebook.md`, `register/td.md` | none; the notebook and TD register with Unicode math (section below) |
+| `chat` | a reply to the user in the chat | `exemplars/chat.md` (approved 2026-11-12), with `exemplars/td.md` | none; the TD register with Unicode math (section below) |
 
 Each exemplar file opens with an index of passages by document part (an opening, a definition, a result reading, a close). `register/<voice>.md` is a short characterization of that voice's exemplars, read with them and never instead of them. `register/td.md` and `exemplars/td.md` carry the technical description's register, which the notebook voice applies and the chat voice reads. `register/cut_on_sight.md` holds the cut-on-sight list and the sentence mechanics, which apply in every voice.
 
 The EDAM Draft Technical Description became the named model for notebook markdown on 2026-08-20 (user decision).
 
-## Chat replies (user instruction 2026-10-19)
+## Chat replies (user instruction 2026-10-19; the TD voice, owner decision 2026-11-12)
 
-A reply to the user in the chat is authored prose and takes this skill like any other document. It is written in the register of the notebook and TD voices: declarative sentences, one claim each, the subject next to its verb, the number stated and then the stop, no intensifiers, no em-dashes, no reader-address, no meta-commentary, and the cut-on-sight list of `register/cut_on_sight.md` applied in full. The one modification is the math: a chat reply writes math in readable Unicode characters (λ̂_a, μ_m, SF_{n,m}, Σ_a N_a^c + T_E = R + R_T, θ₁ − θ₂, ≤, ≥, ×), never `$…$` or other LaTeX source, because the chat does not render it. The exemplar files are not reread for every reply; `register/notebook.md` and `register/td.md` carry the register, and `style_check.py` is not run on a chat reply. Notebook markdown and record entries keep their own voice and their LaTeX math.
+A reply to the user in the chat is authored prose and takes this skill like any other document. It is written in the TD voice, the register of the EDAM technical description: declarative sentences, one claim each, the subject next to its verb, the number stated and then the stop, no intensifiers, no em-dashes, no reader-address, no meta-commentary, and the cut-on-sight list of `register/cut_on_sight.md` applied in full. The one modification is the math: a chat reply writes math in readable Unicode characters (λ̂_a, μ_m, SF_{n,m}, Σ_a N_a^c + T_E = R + R_T, θ₁ − θ₂, ≤, ≥, ×), never `$…$` or other LaTeX source, because the chat does not render it. The exemplar files are not reread for every reply. In Claude Code the output style `.claude/output-styles/edam-technical-description.md` carries the register, the math and two of the ten approved replies of `exemplars/chat.md` into every turn, and the Stop hook `.claude/hooks/chat_voice.py` runs `style_check.py`'s tells on each reply and logs what it finds, without blocking. Notebook markdown and record entries keep their own voice and their LaTeX math.
 
 ## The workflow
 

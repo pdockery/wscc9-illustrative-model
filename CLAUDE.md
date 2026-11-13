@@ -21,7 +21,7 @@ Each skill that a starter invokes runs `orientation` first when it has not run i
 
 ## 2. The chat voice
 
-Every piece of prose the agent authors, chat replies included, goes through the `writing-voice` skill, reduced here to the notebook and chat voices. A chat reply takes the notebook register with math in Unicode characters, never LaTeX. A sentence that adds no fact, definition or reading of a result is cut. The cut-on-sight list is `.claude/skills/writing-voice/register/cut_on_sight.md`.
+Every piece of prose the agent authors, chat replies included, goes through the `writing-voice` skill, reduced here to the notebook and chat voices. A chat reply takes the TD voice, the register of the EDAM technical description, with math in Unicode characters, never LaTeX (owner decision 2026-11-12; `AGENTS.md`, "Working rules"). The output style `EDAM technical description`, `.claude/output-styles/edam-technical-description.md`, selected by `outputStyle` in `.claude/settings.json`, puts that register and two of the ten approved replies of `.claude/skills/writing-voice/exemplars/chat.md` into the system prompt of every turn of the main conversation. A sub-agent runs its own system prompt, so a brief that asks a sub-agent for prose names the voice. A sentence that adds no fact, definition or reading of a result is cut. The cut-on-sight list is `.claude/skills/writing-voice/register/cut_on_sight.md`.
 
 ## 3. Sub-agent tiers
 
@@ -35,7 +35,7 @@ The session's top-tier model is reserved for the supervisor and for a sub-agent 
 
 ## 5. Hooks
 
-Six hooks are wired in `.claude/settings.json`, under five events. Each fails open on an error of its own, and only the guard blocks.
+Seven hooks are wired in `.claude/settings.json`, under five events. Each fails open on an error of its own, and only the guard blocks.
 
 1. `.claude/hooks/guard.py` (`PreToolUse`, on Bash and PowerShell, timeout 10 s) reads each command and refuses these with exit 2 and the reason.
    - A broad `git add` (`-A`, `--all`, `.`, `:/` or a glob), an add of a path under `sources/academic-literature/`, and a forced add of a path under `sources/`. Each path of a `--pathspec-from-file` file is checked the same way. A pathspec the guard cannot read counts as a broad add: an exclude or attr magic, a substitution, a variable, a backtick, or piped text with an escape the guard does not expand. A `:/` or `:(top)` magic before a path is read from the root. An add inside a subshell, a brace group or a command substitution is read as the same add outside it, and in a PowerShell call a backtick is an escape, not a substitution.
@@ -55,6 +55,7 @@ Six hooks are wired in `.claude/settings.json`, under five events. Each fails op
 4. `.claude/hooks/notebook_check.py` (`PostToolUse`, on Bash and PowerShell, timeout 30 s) applies the cell checks of hook 3 and `prose_lint.py` to a notebook that a shell command changed through `nbformat`, on the cells that differ from HEAD. It never blocks.
 5. `.claude/hooks/session_brief.py` (`SessionStart`) injects the state brief: the branch, the uncommitted entries by kind, the recent commits and their age, the worktrees, the process count against the ceiling, the `lib/` copy with any module that differs from `lib/MANIFEST.md`, the notebooks' staleness, the hook log's counts, the readiness report of `tools/doctor.py`, the newest `dev_notes.md` entry and the open decisions by id. It records the working tree's signature in `.claude/.state/` for hook 6.
 6. `.claude/hooks/session_close.py` (`Stop` and `PreCompact`, timeout 10 s) is the clock-out check. It is advisory, fires once per session and speaks only when the tree changed in the session. It names each `lib/` module that differs from its manifest, each deck notebook changed without a passing slide-check run after the change, each untracked Python file that a modified file imports, and each path the session's record text cites that git ignores. With `LAB_MAINTAINER` set, it also asks for the `dev_notes.md` entry dated today, in the five parts the header of `dev_notes.md` names.
+7. `.claude/hooks/chat_voice.py` (`Stop`, timeout 10 s) reads the chat reply that just ended and logs, with kind `voice` in `.claude/logs/hooks.jsonl`, each tell of machine prose it carries: the contrasts, intensifiers and preemptive negations of `style_check.py`'s tells and `pair_tells`, drama addressed to the reader, a question that asks what the writer should do, an em dash and LaTeX math. The session brief counts them. It never blocks, because a reply streams to the participant as it is written.
 
 The commit hooks of `.githooks/` apply to every commit, whatever tool makes it, and `AGENTS.md`, "Running and verifying", says how to activate them.
 
